@@ -27,5 +27,28 @@ jobs:
           overview = main.get_overview()
           assert overview["summary"]["total_positions"] == 22
           assert len(main.list_positions()["positions"]) == 22
-          print("CHRO HR1 smoke test: PASS")
+          print("CHRO HR1 backend smoke test: PASS")
           PY
+
+  static-preview-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check JavaScript syntax
+        run: |
+          node --check assets/v2-data.js
+          node --check assets/v2-app.js
+      - name: Verify Pages entrypoint and v2 assets
+        run: |
+          test -f index.html
+          test -f assets/v2-data.js
+          test -f assets/v2-app.js
+          grep -q "assets/v2-data.js" index.html
+          grep -q "assets/v2-app.js" index.html
+          grep -q "CHRO_V2_SEED" assets/v2-data.js
+          grep -q "localStorage" assets/v2-app.js
+          grep -q "renderGovernance" assets/v2-app.js
+          grep -q "openTimeline" assets/v2-app.js
