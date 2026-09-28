@@ -283,6 +283,7 @@
       setTab('positions');
     });
     document.querySelectorAll('.go-governance').forEach(btn => btn.onclick = () => setTab('governance'));
+    bindPositionButtons();
   }
 
   function tableEscalations(rows) {
@@ -433,7 +434,7 @@
       '<div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">',
       '<div class="border-b border-slate-100 px-5 py-4"><b>'+queue.length+' รายการต้องติดตาม</b></div>',
       queue.length?'<div class="overflow-x-auto"><table class="min-w-[1250px] w-full text-xs"><thead class="bg-slate-50 text-slate-500"><tr><th class="p-3 text-left">ตำแหน่ง</th><th class="p-3 text-left">จังหวัด/หน่วยงาน</th><th class="p-3 text-left">SLA</th><th class="p-3 text-left">เหตุขัดข้อง</th><th class="p-3 text-left">Escalation</th><th class="p-3 text-left">Action ล่าสุด</th><th class="p-3 text-right">จัดการ</th></tr></thead><tbody>'
-        +queue.map(p=>{const n=latestGovNote(p.position_id);return '<tr class="border-t border-slate-100"><td class="p-3"><b>'+esc(p.position_id)+'</b><span class="block">'+esc(p.position_name_th)+'</span></td><td class="p-3"><b>'+esc(p.province_name_th)+'</b><span class="block text-slate-500">'+esc(p.unit_name)+'</span></td><td class="p-3 text-rose-600"><b>เกิน '+Math.abs(p.days_left)+' วัน</b><span class="block text-slate-500">อยู่ขั้นนี้ '+p.days_in_stage+' วัน</span></td><td class="p-3">'+esc(p.bottleneck_name)+'<span class="block text-slate-500">'+esc(p.remarks||'')+'</span></td><td class="p-3"><span class="rounded-full bg-indigo-100 px-2 py-1 font-semibold text-indigo-700">'+esc(escalationLevel(p))+'</span></td><td class="p-3">'+(n?'<b>'+esc(n.status)+'</b><span class="block text-slate-500">'+esc(n.note)+'</span>':'<span class="text-slate-400">ยังไม่มี action note</span>')+'</td><td class="p-3 text-right"><button data-id="'+esc(p.position_id)+'" class="gov-action rounded-lg bg-indigo-600 px-2 py-1 text-white">Action note</button></td></tr>'}).join('')
+        +queue.map(p=>{const n=latestGovNote(p.position_id);return '<tr class="border-t border-slate-100"><td class="p-3"><b>'+esc(p.position_id)+'</b><span class="block">'+esc(p.position_name_th)+'</span></td><td class="p-3"><b>'+esc(p.province_name_th)+'</b><span class="block text-slate-500">'+esc(p.unit_name)+'</span></td><td class="p-3 text-rose-600"><b>เกิน '+Math.abs(p.days_left)+' วัน</b><span class="block text-slate-500">อยู่ขั้นนี้ '+p.days_in_stage+' วัน</span></td><td class="p-3">'+esc(p.bottleneck_name)+'<span class="block text-slate-500">'+esc(p.remarks||'')+'</span></td><td class="p-3"><span class="rounded-full bg-indigo-100 px-2 py-1 font-semibold text-indigo-700">'+esc(escalationLevel(p))+'</span></td><td class="p-3">'+(n?'<b>'+esc(n.status)+'</b><span class="block text-slate-500">'+esc(n.note)+'</span>':'<span class="text-slate-400">ยังไม่มี action note</span>')+'</td><td class="p-3 text-right">'+(ui.role==='executive'?'<span class="text-slate-400">View only</span>':'<button data-id="'+esc(p.position_id)+'" class="gov-action rounded-lg bg-indigo-600 px-2 py-1 text-white">Action note</button>')+'</td></tr>'}).join('')
         +'</tbody></table></div>'
         :'<div class="p-8 text-center text-slate-400">ไม่มีรายการเกิน SLA</div>',
       '</div>'
@@ -462,7 +463,7 @@
       '</div>',
       '<div class="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 class="font-bold">Preview data controls</h2><p class="mt-1 text-xs text-slate-500">Export JSON เก็บ state ทั้งหมดรวม audit/governance notes; Import เพื่อ restore ใน browser เครื่องนี้</p><div class="mt-4 flex flex-wrap gap-2">'
         +'<button id="adminExportJson" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold">⬇ Export JSON backup</button>'
-        +'<button id="adminImportJson" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold">⬆ Import JSON</button>'
+        +(ui.role==='reg_admin'?'<button id="adminImportJson" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold">⬆ Import JSON</button>':'')
         +'<button id="adminExportCsv" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold">⬇ Export current CSV</button>'
         +(ui.role==='reg_admin'?'<button id="adminReset" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white">Reset to seed</button>':'')
         +'</div></div>',
@@ -472,7 +473,7 @@
     ].join('');
 
     byId('adminExportJson').onclick = exportJson;
-    byId('adminImportJson').onclick = () => byId('importJsonInput').click();
+    if (byId('adminImportJson')) byId('adminImportJson').onclick = () => byId('importJsonInput').click();
     byId('adminExportCsv').onclick = () => exportCsv(filteredPositions());
     if (byId('adminReset')) byId('adminReset').onclick = resetData;
   }
@@ -555,7 +556,8 @@
     if (!id) return toast('กรุณาระบุเลขตำแหน่ง');
     const unitId = byId('fUnit').value;
     const old = state.positions.find(p=>p.position_id===id);
-    if (!old && state.positions.some(p=>p.position_id===id)) return toast('เลขตำแหน่งซ้ำ');
+    if (modalMode === 'position-create' && old) return toast('เลขตำแหน่งซ้ำ');
+    if (modalMode === 'position-edit' && !old) return toast('ไม่พบตำแหน่งที่กำลังแก้ไข');
     const msCode = byId('fMilestone').value;
     const ms = milestone(msCode);
     const data = {
