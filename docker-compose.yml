@@ -1,0 +1,7 @@
+services:
+  chro-hr1-app:
+    build: .
+    container_name: chro_hr1_position_tracker
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
