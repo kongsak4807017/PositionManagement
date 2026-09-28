@@ -1,0 +1,31 @@
+name: CHRO HR1 CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python init_db.py
+      - run: python -m py_compile main.py database.py init_db.py
+      - name: Smoke test API functions
+        run: |
+          python - <<'PY'
+          import main
+          assert main.healthz()["status"] == "ok"
+          overview = main.get_overview()
+          assert overview["summary"]["total_positions"] == 22
+          assert len(main.list_positions()["positions"]) == 22
+          print("CHRO HR1 smoke test: PASS")
+          PY
