@@ -10,6 +10,8 @@ Preview v2 เป็น static interactive prototype ที่ทำงานบ
 
 - Executive dashboard: KPI, WIP, M1–M6 funnel, province progress และ priority escalation
 - Position management: search/filter, create, edit, delete (Regional Admin), milestone update และ HROPS flag
+- HROPS-aligned fields: แยก `position_name_th` (ชื่อตำแหน่ง) ออกจาก `position_level` (ระดับตำแหน่ง)
+- Retirement vacancy control: checkbox การอนุมัติใช้ตำแหน่งจาก บค.สป. พร้อมเลขหนังสือและวันที่เริ่มใช้ได้
 - Audit timeline: create/update/transition history พร้อมผู้ดำเนินการ เลขเอกสาร และหมายเหตุ
 - Analytics: aging, bottleneck ranking, SLA by province และ milestone × SLA matrix
 - Governance: CHRO escalation queue และ local action notes
