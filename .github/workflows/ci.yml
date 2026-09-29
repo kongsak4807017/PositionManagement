@@ -25,17 +25,72 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Compile production backend
         run: python -m py_compile production.py
-      - name: Initialize schema and reference data
+      - name: Initialize schema and test XLSX to database UPSERT
         run: |
           python production.py init-reference
           python - <<'PY'
+          from datetime import date
+          from pathlib import Path
+          import hashlib
+          from openpyxl import Workbook
           import production
-          db=production.SessionLocal()
+
+          db = production.SessionLocal()
           assert db.query(production.Province).count() == 8
           assert db.query(production.OrganizationalUnit).count() >= 15
+
+          user = production.User(
+              username="ci-admin",
+              password_hash=production.hash_password("Strong-CI-Password-123"),
+              full_name="CI Admin",
+              role=production.UserRole.REGION_ADMIN,
+              is_active=True,
+          )
+          db.add(user)
+          db.commit()
+
+          def make_file(path, level):
+              wb = Workbook()
+              ws = wb.active
+              ws.title = "HROPS"
+              ws.append(["เลขที่ตำแหน่ง","รหัสหน่วยงาน","ประเภทตำแหน่ง","ชื่อตำแหน่ง","ระดับตำแหน่ง","ประเภทการจ้าง","สถานะตำแหน่ง"])
+              ws.append(["99999","U5701","ข้าราชการ","นักวิชาการสาธารณสุข",level,"ข้าราชการ","ว่าง"])
+              wb.save(path)
+
+          def run_import(path, month):
+              digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+              run = production.HropsImportRun(
+                  baseline_month=month,
+                  original_filename=Path(path).name,
+                  stored_path=str(path),
+                  sha256=digest,
+                  file_size_bytes=Path(path).stat().st_size,
+                  status="RECEIVED",
+                  uploaded_by_user_id=user.user_id,
+              )
+              db.add(run)
+              db.commit()
+              run = db.get(production.HropsImportRun, run.import_id)
+              summary = production.process_hrops_workbook(db, run)
+              db.commit()
+              return summary
+
+          make_file("ci_hrops_1.xlsx", "ชำนาญการ")
+          s1 = run_import("ci_hrops_1.xlsx", date(2026, 9, 1))
+          assert s1["inserted"] == 1
+          p = db.query(production.Position).filter(production.Position.hrops_position_no == "99999").one()
+          assert p.position_level == "ชำนาญการ"
+
+          make_file("ci_hrops_2.xlsx", "ชำนาญการพิเศษ")
+          s2 = run_import("ci_hrops_2.xlsx", date(2026, 10, 1))
+          assert s2["updated"] == 1
+          db.refresh(p)
+          assert p.position_level == "ชำนาญการพิเศษ"
+          assert db.query(production.HropsPositionSnapshot).count() == 2
+
           db.close()
           assert production.healthz()["status"] == "ok"
-          print("Production backend smoke test: PASS")
+          print("XLSX -> DB insert/update smoke test: PASS")
           PY
 
   static-preview-test:
