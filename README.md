@@ -1,60 +1,131 @@
 # CHRO HR1 Position Management
 
-ระบบติดตามการบริหารตำแหน่ง เขตสุขภาพที่ 1 (CHRO-HR1) สำหรับ Position Pipeline, Milestone M1–M6, SLA, bottleneck, governance escalation และ audit trail
+ระบบบริหารตำแหน่งว่าง เขตสุขภาพที่ 1 — **Position Master + HROPS Monthly Baseline + Vacancy Workflow + Audit Trail**
 
-## GitHub Pages — Full Interactive Preview v2
+Repository นี้มี 2 surface แยกกัน:
 
-Preview v2 เป็น static interactive prototype ที่ทำงานบน GitHub Pages โดยไม่ต้องมี backend และเก็บการเปลี่ยนแปลงไว้ใน browser ผ่าน `localStorage`.
+1. **GitHub Pages Full Interactive Preview v2** — prototype สำหรับทดสอบ UX/workflow โดยใช้ browser `localStorage`
+2. **Production Server Foundation v3** — FastAPI + PostgreSQL + JWT login + RBAC/data scope + audit + HROPS immutable upload registry
 
-### Functional preview
+## Data architecture
 
-- Executive dashboard: KPI, WIP, M1–M6 funnel, province progress และ priority escalation
-- Position management: search/filter, create, edit, delete (Regional Admin), milestone update และ HROPS flag
-- HROPS-aligned fields: แยก `position_name_th` (ชื่อตำแหน่ง) ออกจาก `position_level` (ระดับตำแหน่ง)
-- Retirement vacancy control: checkbox การอนุมัติใช้ตำแหน่งจาก บค.สป. พร้อมเลขหนังสือและวันที่เริ่มใช้ได้
-- Audit timeline: create/update/transition history พร้อมผู้ดำเนินการ เลขเอกสาร และหมายเหตุ
-- Analytics: aging, bottleneck ranking, SLA by province และ milestone × SLA matrix
-- Governance: CHRO escalation queue และ local action notes
-- Role simulation: Executive, Regional Admin, Provincial Gatekeeper และ Hospital HR พร้อม scope/permission ต่างกัน
-- Data tools: CSV export, JSON backup/restore และ reset-to-seed
-- Seed dataset: 22 demo positions จาก CHRO HR1 webapp bundle
+หลักการสำคัญคือ **HROPS ไม่เขียนทับข้อมูล workflow ของพื้นที่**
 
-> Preview v2 เป็น workflow prototype ไม่ใช่ production database. Google Sheets live sync, authentication และ HROPS integration ยังแสดงสถานะเป็น Not connected อย่างชัดเจน.
+- HROPS `.xlsx` รายเดือน = authoritative baseline snapshot
+- สสจ. / รพศ. / รพท. = operational vacancy workflow
+- Position = stable identity
+- Vacancy Case = เหตุการณ์ตำแหน่งว่างหนึ่งรอบ
+- Vacancy Event = timeline แบบ append-only
+- ทุกเดือนทำ reconciliation ระหว่าง snapshot กับ Position/Vacancy state
 
-## Full FastAPI prototype
+ดู Mermaid flow, HROPS state, RBAC และ ER diagram: [`docs/DATA_FLOW.md`](docs/DATA_FLOW.md)
 
-Repository ยังเก็บ FastAPI + SQLite prototype สำหรับทดสอบ server-side API.
+## Production roles
 
-### Run locally
+| Role | Data scope | Write |
+|---|---|---:|
+| `MOPH_ADMIN` | Region-wide | Yes |
+| `REGION_ADMIN` | Region-wide | Yes |
+| `REGION_EXECUTIVE` | Region-wide | No |
+| `PROVINCE_ADMIN` | Own province | Yes |
+| `HOSPITAL_HR` | Own organization | Yes |
+| `AUDITOR` | Region-wide audit/read | No |
+
+Scope enforcement อยู่ที่ API ไม่ใช่แค่การซ่อนเมนูใน UI
+
+## Production stack
+
+- FastAPI
+- PostgreSQL 16
+- SQLAlchemy
+- JWT access token
+- bcrypt password hashing
+- Nginx TLS reverse proxy
+- Docker Compose
+- persistent HROPS file volume
+- append-only application audit log
+
+## Local server test
 
 ```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-python init_db.py
-uvicorn main:app --host 0.0.0.0 --port 8000
+docker compose up -d --build
+docker compose exec chro-hr1-app python production.py init-reference
+docker compose exec chro-hr1-app python production.py bootstrap-admin \
+  --username admin \
+  --password 'ChangeThisStrongPassword' \
+  --full-name 'CHRO Administrator' \
+  --role REGION_ADMIN
 ```
 
-Open http://127.0.0.1:8000
+Open `http://127.0.0.1:8000`
 
-### Docker
+- `/` — authenticated production console
+- `/docs` — OpenAPI
+- `/healthz` — health endpoint
+
+## Ministry server deployment
+
+See [`docs/DEPLOYMENT_MOPH.md`](docs/DEPLOYMENT_MOPH.md).
 
 ```bash
-docker build -t chro-hr1 .
-docker run --rm -p 8000:8000 chro-hr1
+cp .env.example .env
+# edit secrets/hostname/TLS settings
+docker compose -f deploy/docker-compose.prod.yml --env-file .env up -d --build
 ```
+
+No production password, database password or JWT secret is stored in the repository.
+
+## HROPS monthly upload
+
+`POST /api/hrops/imports`
+
+Required role: `MOPH_ADMIN` or `REGION_ADMIN`.
+
+The service accepts `.xlsx`, enforces an upload size limit, computes SHA-256, stores the original file in an immutable monthly directory and registers an import run.
+
+The next implementation layer is the approved HROPS **field mapper + reconciliation processor**. It must be configured against the actual HROPS column dictionary before automatic baseline publication; the repository intentionally does not guess production column names.
+
+## Production database model
+
+The production schema in `production.py` includes:
+
+- `provinces`
+- `organizational_units`
+- `users`
+- `positions`
+- `hrops_import_runs`
+- `hrops_staging_rows`
+- `hrops_position_snapshots`
+- `vacancy_cases`
+- `vacancy_events`
+- `audit_logs`
+
+For retirement vacancies, the operational event can record:
+
+- approval status
+- approval document number
+- approval document date
+- date the position becomes usable
 
 ## Repository structure
 
-- `index.html` — GitHub Pages v2 entrypoint
-- `assets/v2-data.js` — static seed/master data
-- `assets/v2-app.js` — interactive preview engine
-- `static/index.html` — original FastAPI frontend
-- `main.py` — FastAPI API
-- `database.py`, `init_db.py` — SQLite schema/seed
-- `.github/workflows/ci.yml` — backend + static preview CI
+```text
+production.py                Production API/database/auth/RBAC
+docs/DATA_FLOW.md            Mermaid data flow, RBAC, ERD
+docs/DEPLOYMENT_MOPH.md      Ministry server deployment/security guide
+deploy/docker-compose.prod.yml
+deploy/nginx.conf
+.env.example
+Dockerfile
+index.html                   GitHub Pages Preview v2
+assets/                      GitHub Pages preview assets
+main.py / database.py        Legacy FastAPI/SQLite prototype retained for reference
+```
 
-## Data governance note
+## GitHub Pages Preview v2
 
-Production implementation should replace browser-local persistence with authenticated central storage, explicit RBAC, audit logging, backup/recovery and approved HROPS/Google Workspace integration.
+The static preview remains available and is intentionally isolated from the production database/authentication stack. It is a workflow prototype, not a security boundary or production database.
+
+## Production governance note
+
+Before real personnel data is loaded, the deployment should pass the Ministry/organizational security, privacy, infrastructure, backup/restore, user-access and HROPS data-dictionary approval process.
