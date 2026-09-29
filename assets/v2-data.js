@@ -1,10 +1,11 @@
 window.CHRO_V2_SEED = {
   "meta": {
-    "version": "2.0.0",
+    "version": "2.1.0",
     "snapshot_date": "2026-09-28",
     "source": "CHRO HR1 webapp bundle / init_db.py",
     "source_type": "static-preview",
-    "note": "Demo dataset for GitHub Pages. Browser changes are stored locally only."
+    "note": "Demo dataset for GitHub Pages. Browser changes are stored locally only.",
+    "schema_note": "Separated HROPS position name and position level; added retirement-use approval fields."
   },
   "provinces": [
     {
@@ -336,7 +337,7 @@ window.CHRO_V2_SEED = {
     {
       "position_id": "10452",
       "unit_id": "U5701",
-      "position_name_th": "นายแพทย์ ชำนาญการพิเศษ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "อายุรกรรมโรคหัวใจ",
       "employment_type": "ข้าราชการ",
@@ -350,12 +351,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รอ บค.สป. จัดสรรรอบถัดไป",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการพิเศษ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "10589",
       "unit_id": "U5701",
-      "position_name_th": "พยาบาลวิชาชีพ ชำนาญการ",
+      "position_name_th": "พยาบาลวิชาชีพ",
       "cadre_group": "พยาบาล",
       "specialist_name": "CCU",
       "employment_type": "ข้าราชการ",
@@ -369,12 +374,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "เปิดรับสมัครรอบที่ 1",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "10612",
       "unit_id": "U5701",
-      "position_name_th": "เภสัชกร ชำนาญการ",
+      "position_name_th": "เภสัชกร",
       "cadre_group": "เภสัชกร",
       "specialist_name": "เภสัชกรรมคลินิก",
       "employment_type": "ข้าราชการ",
@@ -388,12 +397,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ได้ตัวบุคคลแล้ว รอเสนอผู้ว่าฯ ลงนาม",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "10700",
       "unit_id": "U5701",
-      "position_name_th": "นักรังสีการแพทย์ ปฏิบัติการ",
+      "position_name_th": "นักรังสีการแพทย์",
       "cadre_group": "สายสนับสนุน",
       "specialist_name": "รังสีวินิจฉัย",
       "employment_type": "ข้าราชการ",
@@ -407,12 +420,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "เพิ่งได้รับอนุมัติกรอบจาก สป.",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ปฏิบัติการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "10815",
       "unit_id": "U5702",
-      "position_name_th": "นักวิชาการสาธารณสุข ชำนาญการ",
+      "position_name_th": "นักวิชาการสาธารณสุข",
       "cadre_group": "นักวิชาการสาธารณสุข",
       "specialist_name": "ส่งเสริมสุขภาพ",
       "employment_type": "ข้าราชการ",
@@ -426,12 +443,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ส่งเอกสารประเมินผลงานแล้ว",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "10920",
       "unit_id": "U5703",
-      "position_name_th": "นายแพทย์ ปฏิบัติการ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "เวชศาสตร์ฉุกเฉิน",
       "employment_type": "ข้าราชการ",
@@ -445,12 +466,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ไม่มีผู้เลือก รพช.แม่จัน",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ปฏิบัติการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "10988",
       "unit_id": "U5704",
-      "position_name_th": "ทันตแพทย์ ชำนาญการ",
+      "position_name_th": "ทันตแพทย์",
       "cadre_group": "ทันตแพทย์",
       "specialist_name": "ทันตกรรมทั่วไป",
       "employment_type": "พกส.",
@@ -464,12 +489,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 1,
       "remarks": "บรรจุและปรับระบบเรียบร้อย",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "20110",
       "unit_id": "U5001",
-      "position_name_th": "นายแพทย์ ชำนาญการพิเศษ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "ประสาทศัลยศาสตร์",
       "employment_type": "ข้าราชการ",
@@ -483,12 +512,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ประกาศรับย้ายระดับเขต",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการพิเศษ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "20215",
       "unit_id": "U5001",
-      "position_name_th": "พยาบาลวิชาชีพ ปฏิบัติการ",
+      "position_name_th": "พยาบาลวิชาชีพ",
       "cadre_group": "พยาบาล",
       "specialist_name": "ห้องผ่าตัด",
       "employment_type": "ข้าราชการ",
@@ -502,12 +535,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ผู้สอบได้เลือก รพศ.นครพิงค์ รอคำสั่ง",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ปฏิบัติการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "20340",
       "unit_id": "U5002",
-      "position_name_th": "นักจัดการงานทั่วไป ชำนาญการ",
+      "position_name_th": "นักจัดการงานทั่วไป",
       "cadre_group": "สายสนับสนุน",
       "specialist_name": "บริหารงานบุคคล",
       "employment_type": "ข้าราชการ",
@@ -521,12 +558,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รอประชุม CHRO เขต 1",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "20401",
       "unit_id": "U5003",
-      "position_name_th": "เภสัชกร ปฏิบัติการ",
+      "position_name_th": "เภสัชกร",
       "cadre_group": "เภสัชกร",
       "specialist_name": "คลังยา",
       "employment_type": "พรก.",
@@ -540,12 +581,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รพช.สันทราย ส่งหนังสือขอใช้",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ปฏิบัติการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "30101",
       "unit_id": "U5201",
-      "position_name_th": "นายแพทย์ เชี่ยวชาญ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "กุมารเวชศาสตร์ทารกแรกเกิด",
       "employment_type": "ข้าราชการ",
@@ -559,12 +604,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ยังไม่มีแพทย์เฉพาะทางสมัคร",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "เชี่ยวชาญ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "30222",
       "unit_id": "U5201",
-      "position_name_th": "พยาบาลวิชาชีพ ชำนาญการ",
+      "position_name_th": "พยาบาลวิชาชีพ",
       "cadre_group": "พยาบาล",
       "specialist_name": "ICU Med",
       "employment_type": "ข้าราชการ",
@@ -578,12 +627,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 1,
       "remarks": "รายงานตัวแล้ว ปรับ HROPS สำเร็จ",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "30333",
       "unit_id": "U5203",
-      "position_name_th": "เจ้าพนักงานเภสัชกรรม ปฏิบัติงาน",
+      "position_name_th": "เจ้าพนักงานเภสัชกรรม",
       "cadre_group": "สายสนับสนุน",
       "specialist_name": "จ่ายยา",
       "employment_type": "พกส.",
@@ -597,12 +650,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รอผลตรวจสุขภาพ",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ปฏิบัติงาน",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "40105",
       "unit_id": "U5501",
-      "position_name_th": "นายแพทย์ ชำนาญการ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "ออร์โธปิดิกส์",
       "employment_type": "ข้าราชการ",
@@ -616,12 +673,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ขาดแคลนแพทย์กระดูก รพท.น่าน",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "40210",
       "unit_id": "U5503",
-      "position_name_th": "พยาบาลวิชาชีพ ชำนาญการ",
+      "position_name_th": "พยาบาลวิชาชีพ",
       "cadre_group": "พยาบาล",
       "specialist_name": "อุบัติเหตุฉุกเฉิน",
       "employment_type": "ข้าราชการ",
@@ -635,12 +696,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รอเข้า CHRO เขต 1 เกลี่ยตำแหน่ง",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "50101",
       "unit_id": "U5801",
-      "position_name_th": "นายแพทย์ ชำนาญการ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "สูตินรีเวชวิทยา",
       "employment_type": "ข้าราชการ",
@@ -654,12 +719,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "พื้นที่พิเศษ รอจัดสรรรอบ สป.",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "50202",
       "unit_id": "U5801",
-      "position_name_th": "พยาบาลวิชาชีพ ปฏิบัติการ",
+      "position_name_th": "พยาบาลวิชาชีพ",
       "cadre_group": "พยาบาล",
       "specialist_name": "ห้องคลอด",
       "employment_type": "ข้าราชการ",
@@ -673,12 +742,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "ไม่มีผู้สมัคร",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ปฏิบัติการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "50303",
       "unit_id": "U5803",
-      "position_name_th": "เจ้าพนักงานสาธารณสุข ชำนาญงาน",
+      "position_name_th": "เจ้าพนักงานสาธารณสุข",
       "cadre_group": "นักวิชาการสาธารณสุข",
       "specialist_name": "ระบาดวิทยา",
       "employment_type": "ข้าราชการ",
@@ -692,12 +765,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รอออกประกาศรับย้าย",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญงาน",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "60101",
       "unit_id": "U5401",
-      "position_name_th": "พยาบาลวิชาชีพ ชำนาญการ",
+      "position_name_th": "พยาบาลวิชาชีพ",
       "cadre_group": "พยาบาล",
       "specialist_name": "ผู้ป่วยหนัก",
       "employment_type": "ข้าราชการ",
@@ -711,12 +788,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รพท.แพร่ เตรียมออกคำสั่ง",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "70101",
       "unit_id": "U5601",
-      "position_name_th": "เภสัชกร ชำนาญการ",
+      "position_name_th": "เภสัชกร",
       "cadre_group": "เภสัชกร",
       "specialist_name": "ผลิตยา",
       "employment_type": "ข้าราชการ",
@@ -730,12 +811,16 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รพท.พะเยา รอเรียกบัญชี สป.",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     },
     {
       "position_id": "80101",
       "unit_id": "U5101",
-      "position_name_th": "นายแพทย์ ชำนาญการ",
+      "position_name_th": "นายแพทย์",
       "cadre_group": "แพทย์",
       "specialist_name": "รังสีวิทยา",
       "employment_type": "ข้าราชการ",
@@ -749,7 +834,11 @@ window.CHRO_V2_SEED = {
       "hrops_synced": 0,
       "remarks": "รพท.ลำพูน รอเรียกบัญชี",
       "created_at": "2026-09-28T00:00:00+07:00",
-      "updated_at": "2026-09-28T00:00:00+07:00"
+      "updated_at": "2026-09-28T00:00:00+07:00",
+      "position_level": "ชำนาญการ",
+      "retirement_use_approved": false,
+      "retirement_approval_doc_no": "",
+      "retirement_use_from_date": ""
     }
   ],
   "history": [
