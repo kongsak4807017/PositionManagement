@@ -2,6 +2,17 @@ services:
   chro-hr1-app:
     build: .
     container_name: chro_hr1_position_tracker
+    environment:
+      APP_ENV: development
+      DATABASE_URL: sqlite:////data/chro_production.db
+      JWT_SECRET: local-development-secret-change-before-production
+      ALLOWED_ORIGINS: http://localhost:8000,http://127.0.0.1:8000
+      HROPS_STORAGE_DIR: /data/hrops
     ports:
       - "8000:8000"
+    volumes:
+      - chro_local_data:/data
     restart: unless-stopped
+
+volumes:
+  chro_local_data:
