@@ -49,11 +49,15 @@ def init_schema():
         position_id TEXT PRIMARY KEY,
         unit_id TEXT NOT NULL,
         position_name_th TEXT NOT NULL,
+        position_level TEXT,
         cadre_group TEXT NOT NULL,
         specialist_name TEXT,
         employment_type TEXT NOT NULL,
         vacant_date TEXT NOT NULL,
         vacant_reason TEXT NOT NULL,
+        retirement_use_approved INTEGER DEFAULT 0,
+        retirement_approval_doc_no TEXT,
+        retirement_use_from_date TEXT,
         management_channel TEXT NOT NULL,
         current_milestone TEXT NOT NULL,
         milestone_entry_date TEXT NOT NULL,
@@ -81,9 +85,22 @@ def init_schema():
         FOREIGN KEY (position_id) REFERENCES position_pipeline(position_id)
     );
     """)
+    # Lightweight forward migration for databases created before schema v2.1.
+    cur.execute("PRAGMA table_info(position_pipeline)")
+    existing_columns = {row["name"] for row in cur.fetchall()}
+    required_columns = {
+        "position_level": "TEXT",
+        "retirement_use_approved": "INTEGER DEFAULT 0",
+        "retirement_approval_doc_no": "TEXT",
+        "retirement_use_from_date": "TEXT",
+    }
+    for column_name, column_type in required_columns.items():
+        if column_name not in existing_columns:
+            cur.execute(f"ALTER TABLE position_pipeline ADD COLUMN {column_name} {column_type}")
+
     conn.commit()
     conn.close()
-    print("Database schema created.")
+    print("Database schema created / migrated.")
 
 if __name__ == "__main__":
     init_schema()
