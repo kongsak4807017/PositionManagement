@@ -174,7 +174,7 @@
       '    🧪 <b>CHRO HR1 Full Interactive Preview v2</b> • Static GitHub Pages prototype • ข้อมูลที่แก้ไขบันทึกเฉพาะใน browser นี้',
       '  </div>',
       '  <header class="sticky top-0 z-40 bg-gradient-to-r from-emerald-900 via-teal-900 to-cyan-950 text-white shadow-lg">',
-      '    <div class="mx-auto max-w-[1500px] px-4 py-3">',
+      '    <div class="mx-auto max-w-[1720px] px-4 py-3">',
       '      <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">',
       '        <div class="flex items-center gap-3">',
       '          <div class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 font-black text-emerald-200">HR1</div>',
@@ -200,7 +200,7 @@
       '      </nav>',
       '    </div>',
       '  </header>',
-      '  <main class="mx-auto max-w-[1500px] p-4 sm:p-6">',
+      '  <main class="mx-auto max-w-[1720px] p-4 sm:p-6">',
       '    <section id="view-overview"></section>',
       '    <section id="view-positions" class="hidden"></section>',
       '    <section id="view-analytics" class="hidden"></section>',
@@ -389,23 +389,36 @@
 
   function positionTable(rows) {
     if (!rows.length) return '<div class="p-8 text-center text-sm text-slate-400">ไม่พบข้อมูลตามเงื่อนไข</div>';
-    return '<div class="overflow-x-auto"><table class="min-w-[1500px] w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500"><tr>'
-      +'<th class="p-3">เลขตำแหน่ง</th><th class="p-3">จังหวัด / หน่วยงาน</th><th class="p-3">ชื่อตำแหน่ง</th><th class="p-3">ระดับตำแหน่ง</th><th class="p-3">ประเภท</th><th class="p-3">เหตุที่ว่าง / สิทธิ์ใช้</th><th class="p-3">Stage</th><th class="p-3">Aging</th><th class="p-3">SLA</th><th class="p-3">Bottleneck</th><th class="p-3">HROPS</th><th class="p-3 text-right">Action</th></tr></thead><tbody>'
+    return '<div class="w-full overflow-x-auto">'
+      +'<table class="w-full min-w-[1320px] table-fixed text-left text-[11px] xl:text-xs leading-5"><thead class="bg-slate-50 text-slate-500"><tr>'
+      +'<th class="w-[72px] p-2.5 align-top">เลข<br>ตำแหน่ง</th>'
+      +'<th class="w-[180px] p-2.5 align-top">จังหวัด / หน่วยงาน</th>'
+      +'<th class="w-[150px] p-2.5 align-top">ชื่อตำแหน่ง</th>'
+      +'<th class="w-[105px] p-2.5 align-top">ระดับตำแหน่ง</th>'
+      +'<th class="w-[115px] p-2.5 align-top">ประเภท</th>'
+      +'<th class="w-[175px] p-2.5 align-top">เหตุที่ว่าง / สิทธิ์ใช้</th>'
+      +'<th class="w-[62px] p-2.5 align-top">Stage</th>'
+      +'<th class="w-[58px] p-2.5 align-top">Aging</th>'
+      +'<th class="w-[92px] p-2.5 align-top">SLA</th>'
+      +'<th class="w-[165px] p-2.5 align-top">Bottleneck</th>'
+      +'<th class="w-[82px] p-2.5 align-top">HROPS</th>'
+      +'<th class="w-[92px] p-2.5 text-right align-top">Action</th>'
+      +'</tr></thead><tbody>'
       + rows.map(p => {
         const editable = canEdit(p);
         return '<tr class="border-t border-slate-100 hover:bg-slate-50/80">'
-          +'<td class="p-3 font-mono font-bold">'+esc(p.position_id)+'</td>'
-          +'<td class="p-3"><b>'+esc(p.province_name_th)+'</b><span class="block text-slate-500">'+esc(p.unit_name)+' • '+esc(p.unit_type_label)+'</span></td>'
-          +'<td class="p-3"><b>'+esc(p.position_name_th)+'</b><span class="block text-slate-500">'+esc(p.specialist_name||'ทั่วไป')+'</span></td>'
-          +'<td class="p-3 font-semibold text-slate-700">'+esc(p.position_level || '-')+'</td>'
-          +'<td class="p-3">'+esc(p.cadre_group)+'<span class="block text-slate-500">'+esc(p.employment_type)+'</span></td>'
-          +'<td class="p-3 min-w-[190px]">'+retirementStatus(p)+'</td>'
-          +'<td class="p-3"><span class="rounded-full bg-indigo-100 px-2 py-1 font-bold text-indigo-700">'+esc(p.current_milestone)+'</span></td>'
-          +'<td class="p-3">'+p.days_in_stage+' วัน</td>'
-          +'<td class="p-3">'+badge(p.sla_status)+'<span class="mt-1 block text-[10px] text-slate-400">'+(p.days_left<0?'เกิน '+Math.abs(p.days_left):'เหลือ '+p.days_left)+' วัน</span></td>'
-          +'<td class="max-w-[230px] p-3"><span title="'+esc(p.remarks||'')+'">'+esc(p.bottleneck_name)+'</span></td>'
-          +'<td class="p-3">'+(Number(p.hrops_synced)?'<span class="font-semibold text-emerald-600">✓ ปรับแล้ว</span>':'<span class="text-slate-400">ยังไม่ปรับ</span>')+'</td>'
-          +'<td class="p-3 text-right"><div class="flex justify-end gap-1"><button data-id="'+esc(p.position_id)+'" class="timeline-pos rounded-lg border border-slate-200 px-2 py-1 hover:bg-white">Timeline</button><button data-id="'+esc(p.position_id)+'" class="open-pos rounded-lg '+(editable?'bg-emerald-600 text-white':'border border-slate-200 text-slate-600')+' px-2 py-1">'+(editable?'จัดการ':'ดู')+'</button></div></td>'
+          +'<td class="p-2.5 align-top font-mono font-bold whitespace-nowrap">'+esc(p.position_id)+'</td>'
+          +'<td class="p-2.5 align-top break-words whitespace-normal"><b>'+esc(p.province_name_th)+'</b><span class="block text-slate-500 leading-4">'+esc(p.unit_name)+' • '+esc(p.unit_type_label)+'</span></td>'
+          +'<td class="p-2.5 align-top break-words whitespace-normal"><b>'+esc(p.position_name_th)+'</b><span class="block text-slate-500 leading-4">'+esc(p.specialist_name||'ทั่วไป')+'</span></td>'
+          +'<td class="p-2.5 align-top break-words whitespace-normal font-semibold text-slate-700">'+esc(p.position_level || '-')+'</td>'
+          +'<td class="p-2.5 align-top break-words whitespace-normal">'+esc(p.cadre_group)+'<span class="block text-slate-500 leading-4">'+esc(p.employment_type)+'</span></td>'
+          +'<td class="p-2.5 align-top break-words whitespace-normal leading-4">'+retirementStatus(p)+'</td>'
+          +'<td class="p-2.5 align-top whitespace-nowrap"><span class="rounded-full bg-indigo-100 px-2 py-1 font-bold text-indigo-700">'+esc(p.current_milestone)+'</span></td>'
+          +'<td class="p-2.5 align-top whitespace-nowrap">'+p.days_in_stage+' วัน</td>'
+          +'<td class="p-2.5 align-top">'+badge(p.sla_status)+'<span class="mt-1 block text-[10px] text-slate-400 leading-4">'+(p.days_left<0?'เกิน '+Math.abs(p.days_left):'เหลือ '+p.days_left)+' วัน</span></td>'
+          +'<td class="p-2.5 align-top break-words whitespace-normal leading-4"><span title="'+esc(p.remarks||'')+'">'+esc(p.bottleneck_name)+'</span></td>'
+          +'<td class="p-2.5 align-top whitespace-normal">'+(Number(p.hrops_synced)?'<span class="font-semibold text-emerald-600">✓ ปรับแล้ว</span>':'<span class="text-slate-400">ยังไม่ปรับ</span>')+'</td>'
+          +'<td class="p-2.5 align-top text-right"><div class="flex flex-col items-stretch gap-1"><button data-id="'+esc(p.position_id)+'" class="timeline-pos rounded-lg border border-slate-200 px-2 py-1 hover:bg-white whitespace-nowrap">Timeline</button><button data-id="'+esc(p.position_id)+'" class="open-pos rounded-lg '+(editable?'bg-emerald-600 text-white':'border border-slate-200 text-slate-600')+' px-2 py-1 whitespace-nowrap">'+(editable?'จัดการ':'ดู')+'</button></div></td>'
           +'</tr>';
       }).join('')
       +'</tbody></table></div>';
