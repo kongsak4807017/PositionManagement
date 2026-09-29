@@ -13,13 +13,47 @@
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const nowISO = () => new Date().toISOString();
+  const POSITION_LEVELS = ['ปฏิบัติงาน','ชำนาญงาน','อาวุโส','ปฏิบัติการ','ชำนาญการ','ชำนาญการพิเศษ','เชี่ยวชาญ','ทรงคุณวุฒิ'];
+
+  function isRetirementReason(reason) {
+    return reason === 'เกษียณ' || reason === 'เกษียณอายุราชการ';
+  }
+
+  function splitLegacyPositionName(name, currentLevel = '') {
+    if (currentLevel) return {name: String(name || '').trim(), level: currentLevel};
+    const source = String(name || '').trim();
+    const levels = [...POSITION_LEVELS].sort((a,b) => b.length - a.length);
+    const level = levels.find(x => source.endsWith(' ' + x));
+    return level ? {name: source.slice(0, -level.length).trim(), level} : {name: source, level: ''};
+  }
+
+  function migrateState(input) {
+    const next = clone(input);
+    next.meta = next.meta || {};
+    next.meta.version = '2.1.0';
+    next.governance_notes = next.governance_notes || [];
+    next.history = next.history || [];
+    next.positions = (next.positions || []).map(p => {
+      const split = splitLegacyPositionName(p.position_name_th, p.position_level);
+      return {
+        ...p,
+        position_name_th: split.name,
+        position_level: split.level,
+        vacant_reason: isRetirementReason(p.vacant_reason) ? 'เกษียณอายุราชการ' : p.vacant_reason,
+        retirement_use_approved: Boolean(p.retirement_use_approved),
+        retirement_approval_doc_no: p.retirement_approval_doc_no || '',
+        retirement_use_from_date: p.retirement_use_from_date || ''
+      };
+    });
+    return next;
+  }
 
   function loadState() {
     try {
       const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (saved && saved.meta && Array.isArray(saved.positions)) return saved;
+      if (saved && saved.meta && Array.isArray(saved.positions)) return migrateState(saved);
     } catch (_) {}
-    return clone(seed);
+    return migrateState(seed);
   }
 
   function loadUI() {
@@ -302,7 +336,7 @@
     if (f.sla) rows = rows.filter(p => p.sla_status === f.sla);
     if (f.q) {
       const q = f.q.toLowerCase();
-      rows = rows.filter(p => [p.position_id,p.position_name_th,p.specialist_name,p.unit_name,p.province_name_th,p.remarks].join(' ').toLowerCase().includes(q));
+      rows = rows.filter(p => [p.position_id,p.position_name_th,p.position_level,p.specialist_name,p.unit_name,p.province_name_th,p.vacant_reason,p.remarks].join(' ').toLowerCase().includes(q));
     }
     return rows.sort((a,b) => a.position_id.localeCompare(b.position_id,'th'));
   }
@@ -343,17 +377,29 @@
     return '<label class="text-xs text-slate-500">'+label+'<select id="'+id+'" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 outline-none focus:border-emerald-500">'+options+'</select></label>';
   }
 
+  function retirementStatus(p) {
+    if (!isRetirementReason(p.vacant_reason)) return '<span class="text-slate-600">'+esc(p.vacant_reason || '-')+'</span>';
+    if (p.retirement_use_approved) {
+      return '<span class="font-semibold text-emerald-700">☑ บค.สป. อนุมัติแล้ว</span>'
+        +'<span class="block text-[10px] text-slate-500">หนังสือ '+esc(p.retirement_approval_doc_no || '-')+'</span>'
+        +'<span class="block text-[10px] text-slate-500">ใช้ได้ตั้งแต่ '+esc(p.retirement_use_from_date || '-')+'</span>';
+    }
+    return '<span class="font-semibold text-amber-700">☐ รอ บค.สป. อนุมัติ</span><span class="block text-[10px] text-slate-500">ตำแหน่งเกษียณอายุราชการ</span>';
+  }
+
   function positionTable(rows) {
     if (!rows.length) return '<div class="p-8 text-center text-sm text-slate-400">ไม่พบข้อมูลตามเงื่อนไข</div>';
-    return '<div class="overflow-x-auto"><table class="min-w-[1200px] w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500"><tr>'
-      +'<th class="p-3">เลขตำแหน่ง</th><th class="p-3">จังหวัด / หน่วยงาน</th><th class="p-3">ตำแหน่ง</th><th class="p-3">ประเภท</th><th class="p-3">Stage</th><th class="p-3">Aging</th><th class="p-3">SLA</th><th class="p-3">Bottleneck</th><th class="p-3">HROPS</th><th class="p-3 text-right">Action</th></tr></thead><tbody>'
+    return '<div class="overflow-x-auto"><table class="min-w-[1500px] w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500"><tr>'
+      +'<th class="p-3">เลขตำแหน่ง</th><th class="p-3">จังหวัด / หน่วยงาน</th><th class="p-3">ชื่อตำแหน่ง</th><th class="p-3">ระดับตำแหน่ง</th><th class="p-3">ประเภท</th><th class="p-3">เหตุที่ว่าง / สิทธิ์ใช้</th><th class="p-3">Stage</th><th class="p-3">Aging</th><th class="p-3">SLA</th><th class="p-3">Bottleneck</th><th class="p-3">HROPS</th><th class="p-3 text-right">Action</th></tr></thead><tbody>'
       + rows.map(p => {
         const editable = canEdit(p);
         return '<tr class="border-t border-slate-100 hover:bg-slate-50/80">'
           +'<td class="p-3 font-mono font-bold">'+esc(p.position_id)+'</td>'
           +'<td class="p-3"><b>'+esc(p.province_name_th)+'</b><span class="block text-slate-500">'+esc(p.unit_name)+' • '+esc(p.unit_type_label)+'</span></td>'
           +'<td class="p-3"><b>'+esc(p.position_name_th)+'</b><span class="block text-slate-500">'+esc(p.specialist_name||'ทั่วไป')+'</span></td>'
+          +'<td class="p-3 font-semibold text-slate-700">'+esc(p.position_level || '-')+'</td>'
           +'<td class="p-3">'+esc(p.cadre_group)+'<span class="block text-slate-500">'+esc(p.employment_type)+'</span></td>'
+          +'<td class="p-3 min-w-[190px]">'+retirementStatus(p)+'</td>'
           +'<td class="p-3"><span class="rounded-full bg-indigo-100 px-2 py-1 font-bold text-indigo-700">'+esc(p.current_milestone)+'</span></td>'
           +'<td class="p-3">'+p.days_in_stage+' วัน</td>'
           +'<td class="p-3">'+badge(p.sla_status)+'<span class="mt-1 block text-[10px] text-slate-400">'+(p.days_left<0?'เกิน '+Math.abs(p.days_left):'เหลือ '+p.days_left)+' วัน</span></td>'
@@ -497,9 +543,10 @@
     modalMode = id ? 'position-edit' : 'position-create';
     const defaultUnit = ui.role==='hosp_operator' ? ui.scope : (ui.role==='prov_gatekeeper' ? (state.units.find(u=>u.province_code===ui.scope)||state.units[0]).unit_id : state.units[0].unit_id);
     const p = existing || {
-      position_id:'', unit_id:defaultUnit, position_name_th:'', cadre_group:'แพทย์', specialist_name:'',
+      position_id:'', unit_id:defaultUnit, position_name_th:'', position_level:'', cadre_group:'แพทย์', specialist_name:'',
       employment_type:'ข้าราชการ', vacant_date:todayISO(), vacant_reason:'ลาออก', management_channel:'รับย้าย',
-      current_milestone:'M1', milestone_entry_date:todayISO(), sla_days:15, bottleneck_tag_id:8, hrops_synced:0, remarks:''
+      current_milestone:'M1', milestone_entry_date:todayISO(), sla_days:15, bottleneck_tag_id:8, hrops_synced:0, remarks:'',
+      retirement_use_approved:false, retirement_approval_doc_no:'', retirement_use_from_date:''
     };
     const allowedUnits = state.units.filter(u=>{
       if (ui.role==='prov_gatekeeper') return u.province_code===ui.scope;
@@ -511,27 +558,49 @@
       '<form id="positionForm" class="grid gap-3 md:grid-cols-2">'
       +inputText('fPositionId','เลขตำแหน่ง',p.position_id,id?'readonly':'required')
       +selectHtml('fUnit','หน่วยงาน',allowedUnits.map(u=>'<option value="'+esc(u.unit_id)+'">'+esc(u.unit_name)+' • '+esc(u.unit_type_label)+'</option>').join(''),p.unit_id)
-      +inputText('fPositionName','ชื่อตำแหน่ง',p.position_name_th,'required')
+      +inputText('fPositionName','ชื่อตำแหน่ง (HROPS)',p.position_name_th,'required')
+      +'<label class="text-xs text-slate-500">ระดับตำแหน่ง (HROPS)<input id="fPositionLevel" list="positionLevelList" value="'+esc(p.position_level||'')+'" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800"><datalist id="positionLevelList">'+POSITION_LEVELS.map(x=>'<option value="'+esc(x)+'"></option>').join('')+'</datalist></label>'
       +inputText('fSpecialist','สาขา/ความเชี่ยวชาญ',p.specialist_name||'','')
       +selectHtml('fCadre','กลุ่มสายงาน',['แพทย์','พยาบาล','เภสัชกร','ทันตแพทย์','นักวิชาการสาธารณสุข','สายสนับสนุน'].map(x=>'<option>'+x+'</option>').join(''),p.cadre_group)
       +selectHtml('fEmployment','ประเภทบุคลากร',['ข้าราชการ','พกส.','พรก.'].map(x=>'<option>'+x+'</option>').join(''),p.employment_type)
       +inputText('fVacantDate','วันที่ตำแหน่งว่าง',p.vacant_date,'type="date"')
-      +selectHtml('fVacantReason','เหตุที่ว่าง',['เกษียณ','ลาออก','ย้าย','เสียชีวิต','ตำแหน่งใหม่'].map(x=>'<option>'+x+'</option>').join(''),p.vacant_reason)
+      +selectHtml('fVacantReason','เหตุที่ว่าง',['เกษียณอายุราชการ','ลาออก','ย้าย','เสียชีวิต','ตำแหน่งใหม่'].map(x=>'<option>'+x+'</option>').join(''),p.vacant_reason)
+      +'<div id="retirementApprovalBlock" class="hidden rounded-xl border border-amber-200 bg-amber-50 p-3 md:col-span-2">'
+      +' <label class="flex items-center gap-2 text-sm font-semibold text-amber-900"><input id="fRetirementApproved" type="checkbox" class="h-4 w-4" '+(p.retirement_use_approved?'checked':'')+'> บค.สป. อนุมัติให้ใช้ตำแหน่งเกษียณอายุราชการแล้ว</label>'
+      +' <p class="mt-1 text-xs text-amber-700">ก่อนอนุมัติให้ถือว่ายังรอสิทธิ์ใช้ตำแหน่ง เมื่อได้รับหนังสือให้บันทึกเลขหนังสือและวันที่เริ่มใช้ได้</p>'
+      +' <div id="retirementApprovalDetails" class="mt-3 grid gap-3 md:grid-cols-2">'
+      +inputText('fRetirementDoc','เลขหนังสืออนุมัติ บค.สป.',p.retirement_approval_doc_no||'','')
+      +inputText('fRetirementUseFrom','ใช้ตำแหน่งได้ตั้งแต่วันที่',p.retirement_use_from_date||'','type="date"')
+      +' </div></div>'
       +selectHtml('fChannel','ช่องทางการบริหาร',['รับย้าย','เลื่อนระดับ','เรียกบัญชี สป.','สอบคัดเลือก','รับโอน'].map(x=>'<option>'+x+'</option>').join(''),p.management_channel)
       +selectHtml('fMilestone','Milestone',state.milestones.map(m=>'<option value="'+esc(m.milestone_code)+'">'+esc(m.milestone_code)+' • '+esc(m.milestone_name_th)+'</option>').join(''),p.current_milestone)
       +inputText('fStageDate','วันที่เข้าสู่ milestone',p.milestone_entry_date,'type="date"')
       +selectHtml('fBottleneck','Bottleneck',state.bottlenecks.map(b=>'<option value="'+b.tag_id+'">'+esc(b.tag_name)+'</option>').join(''),String(p.bottleneck_tag_id||8))
       +'<label class="md:col-span-2 text-xs text-slate-500">หมายเหตุ<textarea id="fRemarks" class="mt-1 min-h-20 w-full rounded-lg border border-slate-300 p-2 text-sm">'+esc(p.remarks||'')+'</textarea></label>'
-      +'<label class="text-xs text-slate-500">เลขหนังสือ/เอกสารอ้างอิง<input id="fRefDoc" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></label>'
+      +'<label class="text-xs text-slate-500">เลขหนังสือ/เอกสารอ้างอิงกระบวนการ<input id="fRefDoc" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></label>'
       +'<label class="flex items-end gap-2 pb-2 text-xs text-slate-600"><input id="fHrops" type="checkbox" '+(Number(p.hrops_synced)?'checked':'')+'> ปรับปรุง HROPS แล้ว</label>'
       +'</form>',
       '<div class="flex flex-wrap justify-between gap-2"><div class="flex gap-2">'+(id?'<button id="timelineModalBtn" class="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold">Timeline</button>':'')+(id&&canDelete()?'<button id="deletePositionBtn" class="rounded-lg border border-rose-300 px-3 py-2 text-xs font-semibold text-rose-600">ลบ</button>':'')+'</div><div class="flex gap-2"><button class="modal-close rounded-lg border border-slate-300 px-3 py-2 text-xs">ปิด</button>'+(editable?'<button id="savePositionBtn" class="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white">บันทึก</button>':'')+'</div></div>'
     );
     setValue('fUnit',p.unit_id); setValue('fCadre',p.cadre_group); setValue('fEmployment',p.employment_type); setValue('fVacantReason',p.vacant_reason); setValue('fChannel',p.management_channel); setValue('fMilestone',p.current_milestone); setValue('fBottleneck',String(p.bottleneck_tag_id||8));
+    syncRetirementFields();
+    byId('fVacantReason').onchange = syncRetirementFields;
+    byId('fRetirementApproved').onchange = syncRetirementFields;
     bindModalClose();
     if (byId('savePositionBtn')) byId('savePositionBtn').onclick = savePosition;
     if (byId('timelineModalBtn')) byId('timelineModalBtn').onclick = () => openTimeline(id);
     if (byId('deletePositionBtn')) byId('deletePositionBtn').onclick = () => deletePosition(id);
+  }
+
+  function syncRetirementFields() {
+    const reason = byId('fVacantReason')?.value;
+    const block = byId('retirementApprovalBlock');
+    const details = byId('retirementApprovalDetails');
+    const approved = byId('fRetirementApproved');
+    if (!block || !details || !approved) return;
+    const show = isRetirementReason(reason);
+    block.classList.toggle('hidden', !show);
+    details.classList.toggle('hidden', !show || !approved.checked);
   }
 
   function inputText(id,label,value,attrs='') {
@@ -560,15 +629,26 @@
     if (modalMode === 'position-edit' && !old) return toast('ไม่พบตำแหน่งที่กำลังแก้ไข');
     const msCode = byId('fMilestone').value;
     const ms = milestone(msCode);
+    const vacantReason = byId('fVacantReason').value;
+    const isRetirement = isRetirementReason(vacantReason);
+    const retirementApproved = isRetirement && byId('fRetirementApproved').checked;
+    const retirementDoc = isRetirement ? byId('fRetirementDoc').value.trim() : '';
+    const retirementUseFrom = isRetirement ? byId('fRetirementUseFrom').value : '';
+    if (retirementApproved && !retirementDoc) return toast('กรุณาระบุเลขหนังสืออนุมัติ บค.สป.');
+    if (retirementApproved && !retirementUseFrom) return toast('กรุณาระบุวันที่เริ่มใช้ตำแหน่งได้');
     const data = {
       position_id:id,
       unit_id:unitId,
       position_name_th:byId('fPositionName').value.trim(),
+      position_level:byId('fPositionLevel').value.trim(),
       cadre_group:byId('fCadre').value,
       specialist_name:byId('fSpecialist').value.trim(),
       employment_type:byId('fEmployment').value,
       vacant_date:byId('fVacantDate').value,
-      vacant_reason:byId('fVacantReason').value,
+      vacant_reason:vacantReason,
+      retirement_use_approved:retirementApproved,
+      retirement_approval_doc_no:retirementApproved ? retirementDoc : '',
+      retirement_use_from_date:retirementApproved ? retirementUseFrom : '',
       management_channel:byId('fChannel').value,
       current_milestone:msCode,
       milestone_entry_date:byId('fStageDate').value,
@@ -580,24 +660,39 @@
       updated_at:nowISO()
     };
     const actor = roleName(ui.role);
+    const changedStage = Boolean(old && old.current_milestone!==data.current_milestone);
+    const retirementChanged = Boolean(old && (
+      Boolean(old.retirement_use_approved)!==Boolean(data.retirement_use_approved)
+      || (old.retirement_approval_doc_no||'')!==data.retirement_approval_doc_no
+      || (old.retirement_use_from_date||'')!==data.retirement_use_from_date
+    ));
     if (old) {
       const idx=state.positions.findIndex(p=>p.position_id===id);
       state.positions[idx]=data;
-      const changedStage = old.current_milestone!==data.current_milestone;
+      const approvalNote = retirementChanged
+        ? (data.retirement_use_approved
+            ? 'บค.สป. อนุมัติให้ใช้ตำแหน่งแล้ว • หนังสือ '+data.retirement_approval_doc_no+' • ใช้ได้ตั้งแต่ '+data.retirement_use_from_date
+            : 'ปรับสถานะตำแหน่งเกษียณเป็นรอ บค.สป. อนุมัติ')
+        : '';
       state.history.push({
         event_id:Date.now(),position_id:id,from_milestone:old.current_milestone,to_milestone:data.current_milestone,
         transition_date:data.milestone_entry_date+' 09:00:00',updated_by_user:actor,
-        reference_doc_no:byId('fRefDoc').value.trim()||null,bottleneck_tag_id:data.bottleneck_tag_id,
-        notes:data.remarks|| (changedStage?'Milestone updated':'Position details updated'),
-        event_type:changedStage?'transition':'update'
+        reference_doc_no:retirementChanged && data.retirement_use_approved ? data.retirement_approval_doc_no : (byId('fRefDoc').value.trim()||null),
+        bottleneck_tag_id:data.bottleneck_tag_id,
+        notes:approvalNote || data.remarks || (changedStage?'Milestone updated':'Position details updated'),
+        event_type:retirementChanged?'retirement_approval':(changedStage?'transition':'update')
       });
     } else {
       state.positions.push(data);
       state.history.push({
         event_id:Date.now(),position_id:id,from_milestone:null,to_milestone:data.current_milestone,
         transition_date:data.milestone_entry_date+' 09:00:00',updated_by_user:actor,
-        reference_doc_no:byId('fRefDoc').value.trim()||null,bottleneck_tag_id:data.bottleneck_tag_id,
-        notes:data.remarks||'Position created in preview',event_type:'create'
+        reference_doc_no:data.retirement_use_approved ? data.retirement_approval_doc_no : (byId('fRefDoc').value.trim()||null),
+        bottleneck_tag_id:data.bottleneck_tag_id,
+        notes:data.retirement_use_approved
+          ? 'สร้างตำแหน่งพร้อมสถานะ บค.สป. อนุมัติ • ใช้ได้ตั้งแต่ '+data.retirement_use_from_date
+          : (data.remarks||'Position created in preview'),
+        event_type:'create'
       });
     }
     persist(); closeModal(); renderCurrent(); toast(old?'บันทึกการเปลี่ยนแปลงแล้ว':'เพิ่มตำแหน่งแล้ว');
@@ -616,7 +711,7 @@
     const events = state.history.filter(h=>h.position_id===id).sort((a,b)=>String(b.transition_date).localeCompare(String(a.transition_date)));
     byId('modalRoot').innerHTML = modalShell(
       'Audit Timeline • '+esc(id),
-      '<div class="mb-4 rounded-xl bg-slate-50 p-3 text-sm"><b>'+esc(p?.position_name_th||'ตำแหน่งที่ถูกลบ')+'</b><span class="block text-xs text-slate-500">'+esc(p?enrich(p).unit_name:'')+'</span></div>'
+      '<div class="mb-4 rounded-xl bg-slate-50 p-3 text-sm"><b>'+esc(p?.position_name_th||'ตำแหน่งที่ถูกลบ')+'</b><span class="ml-2 text-slate-500">'+esc(p?.position_level||'')+'</span><span class="block text-xs text-slate-500">'+esc(p?enrich(p).unit_name:'')+'</span></div>'
       +(events.length?'<div class="space-y-3">'+events.map(h=>'<div class="relative rounded-xl border border-slate-200 p-4"><div class="flex flex-wrap items-center justify-between gap-2"><div><span class="rounded-full bg-indigo-100 px-2 py-1 text-xs font-bold text-indigo-700">'+esc(h.event_type||'event')+'</span> <b class="ml-2">'+esc(h.from_milestone||'START')+' → '+esc(h.to_milestone||'-')+'</b></div><span class="text-xs text-slate-400">'+esc(h.transition_date)+'</span></div><div class="mt-2 text-sm text-slate-700">'+esc(h.notes||'-')+'</div><div class="mt-2 text-xs text-slate-500">โดย '+esc(h.updated_by_user||'-')+(h.reference_doc_no?' • เอกสาร '+esc(h.reference_doc_no):'')+'</div></div>').join('')+'</div>':'<div class="text-sm text-slate-400">ยังไม่มีประวัติ</div>'),
       '<div class="flex justify-end"><button class="modal-close rounded-lg border border-slate-300 px-3 py-2 text-xs">ปิด</button></div>'
     );
@@ -641,10 +736,13 @@
   }
 
   function exportCsv(rows) {
-    const headers = ['เลขตำแหน่ง','จังหวัด','หน่วยงาน','ประเภทหน่วยงาน','กลุ่มสายงาน','ชื่อตำแหน่ง','สาขา','ประเภทบุคลากร','Milestone','วันที่เข้าสู่สถานะ','วันในสถานะ','SLA Status','Bottleneck','HROPS','หมายเหตุ'];
+    const headers = ['เลขตำแหน่ง','จังหวัด','หน่วยงาน','ประเภทหน่วยงาน','กลุ่มสายงาน','ชื่อตำแหน่ง','ระดับตำแหน่ง','สาขา','ประเภทบุคลากร','เหตุที่ว่าง','บค.สป.อนุมัติให้ใช้','เลขหนังสืออนุมัติ บค.สป.','ใช้ได้ตั้งแต่วันที่','Milestone','วันที่เข้าสู่สถานะ','วันในสถานะ','SLA Status','Bottleneck','HROPS','หมายเหตุ'];
     const quote = (v) => '"'+String(v??'').replace(/"/g,'""')+'"';
     const lines = [headers.map(quote).join(',')].concat(rows.map(p=>[
-      p.position_id,p.province_name_th,p.unit_name,p.unit_type_label,p.cadre_group,p.position_name_th,p.specialist_name,p.employment_type,p.current_milestone,p.milestone_entry_date,p.days_in_stage,p.sla_status,p.bottleneck_name,p.hrops_synced?'YES':'NO',p.remarks
+      p.position_id,p.province_name_th,p.unit_name,p.unit_type_label,p.cadre_group,p.position_name_th,p.position_level,p.specialist_name,p.employment_type,p.vacant_reason,
+      isRetirementReason(p.vacant_reason)?(p.retirement_use_approved?'YES':'NO'):'N/A',
+      p.retirement_approval_doc_no,p.retirement_use_from_date,
+      p.current_milestone,p.milestone_entry_date,p.days_in_stage,p.sla_status,p.bottleneck_name,p.hrops_synced?'YES':'NO',p.remarks
     ].map(quote).join(',')));
     downloadBlob('\uFEFF'+lines.join('\n'),'CHRO_HR1_preview_v2_'+todayISO()+'.csv','text/csv;charset=utf-8');
   }
@@ -664,10 +762,8 @@
       try {
         const parsed = JSON.parse(reader.result);
         if (!parsed || !Array.isArray(parsed.positions) || !Array.isArray(parsed.units) || !Array.isArray(parsed.milestones)) throw new Error('invalid');
-        parsed.meta = parsed.meta || {}; parsed.meta.version='2.0.0-imported'; parsed.meta.last_local_update=nowISO();
-        parsed.governance_notes = parsed.governance_notes || [];
-        parsed.history = parsed.history || [];
-        state = parsed; persist(); normalizeScope(); renderHeaderState(); renderCurrent(); toast('Import JSON สำเร็จ');
+        parsed.meta = parsed.meta || {}; parsed.meta.last_local_update=nowISO();
+        state = migrateState(parsed); persist(); normalizeScope(); renderHeaderState(); renderCurrent(); toast('Import JSON สำเร็จ');
       } catch (_) { alert('ไฟล์ JSON ไม่ใช่ CHRO HR1 preview backup ที่ถูกต้อง'); }
       byId('importJsonInput').value='';
     };
@@ -676,7 +772,7 @@
 
   function resetData() {
     if (!confirm('Reset preview กลับเป็น seed 22 ตำแหน่ง และลบ local changes ทั้งหมดหรือไม่?')) return;
-    state=clone(seed); persist(); normalizeScope(); renderHeaderState(); renderCurrent(); toast('Reset กลับ seed แล้ว');
+    state=migrateState(seed); persist(); normalizeScope(); renderHeaderState(); renderCurrent(); toast('Reset กลับ seed แล้ว');
   }
 
   function renderHeaderState() {
