@@ -795,6 +795,12 @@ async def upload_hrops(request: Request, baseline_month: date = Form(...), notes
     )
     db.add(run)
     db.flush()
+    write_audit(
+        db, user, "HROPS_FILE_RECEIVED", "hrops_import", run.import_id, request,
+        after={"baseline_month": str(baseline_month), "filename": filename, "sha256": digest, "size": total},
+    )
+    db.commit()
+    run = db.get(HropsImportRun, run.import_id)
 
     try:
         summary = process_hrops_workbook(db, run)
