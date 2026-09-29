@@ -10,6 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import jwt
+from openpyxl import load_workbook
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
@@ -341,6 +342,243 @@ def write_audit(db: Session, user: User | None, action: str, entity_type: str, e
     ))
 
 
+HROPS_HEADER_ALIASES = {
+    "hrops_position_no": ["เลขที่ตำแหน่ง", "เลขตำแหน่ง", "เลขที่ตำแหน่งhrops", "hropspositionno", "positionno", "positionnumber"],
+    "chro_position_id": ["chropositionid", "chroid"],
+    "unit_id": ["รหัสหน่วยงาน", "รหัสหน่วยบริการ", "รหัสส่วนราชการ", "unitid", "orgcode", "organizationcode"],
+    "unit_name": ["ชื่อหน่วยงาน", "หน่วยงาน", "หน่วยบริการ", "สถานบริการ", "ส่วนราชการ", "unitname", "organization"],
+    "unit_type": ["ประเภทหน่วยงาน", "ประเภทหน่วยบริการ", "unittype"],
+    "province_code": ["รหัสจังหวัด", "provincecode", "changwatcode"],
+    "province_name": ["จังหวัด", "ชื่อจังหวัด", "provincename"],
+    "position_type": ["ประเภทตำแหน่ง", "positiontype"],
+    "position_name_th": ["ชื่อตำแหน่ง", "ชื่อตำแหน่งภาษาไทย", "positionname", "positionnameth"],
+    "position_level": ["ระดับตำแหน่ง", "ระดับ", "positionlevel"],
+    "employment_type": ["ประเภทการจ้าง", "ประเภทการจ้างงาน", "employmenttype"],
+    "holder_status": ["สถานะผู้ครองตำแหน่ง", "สถานะตำแหน่ง", "holderstatus", "positionstatus"],
+}
+
+
+def normalize_header(value) -> str:
+    if value is None:
+        return ""
+    return re.sub(r"[\s_\-./():]+", "", str(value).strip().lower())
+
+
+HROPS_ALIAS_LOOKUP = {
+    normalize_header(alias): canonical
+    for canonical, aliases in HROPS_HEADER_ALIASES.items()
+    for alias in aliases
+}
+
+
+def json_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def text_value(value) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = str(value).strip()
+    return text or None
+
+
+def detect_hrops_header(ws):
+    """Return (header_row_number, canonical->column_index) or (None, {})."""
+    for row_no, row in enumerate(ws.iter_rows(min_row=1, max_row=30, values_only=True), start=1):
+        mapping = {}
+        for col_no, value in enumerate(row, start=1):
+            canonical = HROPS_ALIAS_LOOKUP.get(normalize_header(value))
+            if canonical and canonical not in mapping:
+                mapping[canonical] = col_no
+        required_identity = "hrops_position_no" in mapping and "position_name_th" in mapping
+        required_unit = "unit_id" in mapping or "unit_name" in mapping
+        if required_identity and required_unit:
+            return row_no, mapping
+    return None, {}
+
+
+def resolve_or_create_unit(db: Session, record: dict) -> OrganizationalUnit | None:
+    unit_id = text_value(record.get("unit_id"))
+    unit_name = text_value(record.get("unit_name"))
+    province_code = text_value(record.get("province_code"))
+    unit_type = text_value(record.get("unit_type")) or "HROPS"
+
+    if unit_id:
+        unit = db.get(OrganizationalUnit, unit_id)
+        if unit:
+            if unit_name and unit.unit_name != unit_name:
+                unit.unit_name = unit_name
+            if unit_type and unit.unit_type_label != unit_type:
+                unit.unit_type_label = unit_type
+            return unit
+
+        if province_code and db.get(Province, province_code):
+            unit = OrganizationalUnit(
+                unit_id=unit_id,
+                unit_name=unit_name or unit_id,
+                unit_type_label=unit_type,
+                province_code=province_code,
+            )
+            db.add(unit)
+            db.flush()
+            return unit
+
+    if unit_name:
+        matches = db.query(OrganizationalUnit).filter(OrganizationalUnit.unit_name == unit_name).all()
+        if len(matches) == 1:
+            return matches[0]
+
+    return None
+
+
+def process_hrops_workbook(db: Session, run: HropsImportRun) -> dict:
+    """
+    Stream an HROPS XLSX and UPSERT Position rows in the same database.
+    VacancyCase/VacancyEvent are deliberately preserved and never overwritten.
+    """
+    run.status = "PROCESSING"
+    db.flush()
+
+    summary = {
+        "sheets_processed": 0,
+        "rows_seen": 0,
+        "inserted": 0,
+        "updated": 0,
+        "unchanged": 0,
+        "skipped": 0,
+        "duplicates": 0,
+        "errors": [],
+    }
+    seen_position_nos = set()
+
+    workbook = load_workbook(run.stored_path, read_only=True, data_only=True)
+    try:
+        for ws in workbook.worksheets:
+            header_row, mapping = detect_hrops_header(ws)
+            if not header_row:
+                continue
+            summary["sheets_processed"] += 1
+
+            for excel_row_no, row in enumerate(
+                ws.iter_rows(min_row=header_row + 1, values_only=True),
+                start=header_row + 1,
+            ):
+                if not any(v is not None and str(v).strip() for v in row):
+                    continue
+                summary["rows_seen"] += 1
+
+                record = {}
+                for canonical, col_no in mapping.items():
+                    value = row[col_no - 1] if col_no - 1 < len(row) else None
+                    record[canonical] = json_value(value)
+
+                position_no = text_value(record.get("hrops_position_no"))
+                position_name = text_value(record.get("position_name_th"))
+                if not position_no or not position_name:
+                    summary["skipped"] += 1
+                    if len(summary["errors"]) < 100:
+                        summary["errors"].append({"sheet": ws.title, "row": excel_row_no, "reason": "missing position number or position name"})
+                    continue
+
+                if position_no in seen_position_nos:
+                    summary["duplicates"] += 1
+                    continue
+                seen_position_nos.add(position_no)
+
+                unit = resolve_or_create_unit(db, record)
+                if not unit:
+                    summary["skipped"] += 1
+                    if len(summary["errors"]) < 100:
+                        summary["errors"].append({
+                            "sheet": ws.title,
+                            "row": excel_row_no,
+                            "position_no": position_no,
+                            "reason": "unit could not be matched; provide unit code/name and province code",
+                        })
+                    continue
+
+                position = db.query(Position).filter(Position.hrops_position_no == position_no).first()
+                created = position is None
+                if created:
+                    requested_chro_id = text_value(record.get("chro_position_id"))
+                    chro_id = requested_chro_id or f"HROPS-{position_no}"
+                    if db.query(Position).filter(Position.chro_position_id == chro_id).first():
+                        chro_id = f"HROPS-{position_no}-{uuid4().hex[:8]}"
+                    position = Position(
+                        chro_position_id=chro_id,
+                        hrops_position_no=position_no,
+                        unit_id=unit.unit_id,
+                        position_type=text_value(record.get("position_type")),
+                        position_name_th=position_name,
+                        position_level=text_value(record.get("position_level")),
+                        employment_type=text_value(record.get("employment_type")),
+                        is_active=True,
+                    )
+                    db.add(position)
+                    db.flush()
+                    summary["inserted"] += 1
+                else:
+                    before = (
+                        position.unit_id,
+                        position.position_type,
+                        position.position_name_th,
+                        position.position_level,
+                        position.employment_type,
+                    )
+                    position.unit_id = unit.unit_id
+                    position.position_type = text_value(record.get("position_type"))
+                    position.position_name_th = position_name
+                    position.position_level = text_value(record.get("position_level"))
+                    position.employment_type = text_value(record.get("employment_type"))
+                    position.is_active = True
+                    after = (
+                        position.unit_id,
+                        position.position_type,
+                        position.position_name_th,
+                        position.position_level,
+                        position.employment_type,
+                    )
+                    if before == after:
+                        summary["unchanged"] += 1
+                    else:
+                        summary["updated"] += 1
+
+                db.add(HropsPositionSnapshot(
+                    import_id=run.import_id,
+                    snapshot_month=run.baseline_month,
+                    position_uid=position.position_uid,
+                    hrops_position_no=position_no,
+                    unit_id=unit.unit_id,
+                    position_type=text_value(record.get("position_type")),
+                    position_name_th=position_name,
+                    position_level=text_value(record.get("position_level")),
+                    holder_status=text_value(record.get("holder_status")),
+                    raw_payload={k: json_value(v) for k, v in record.items()},
+                ))
+
+                if summary["rows_seen"] % 1000 == 0:
+                    db.flush()
+
+        if summary["sheets_processed"] == 0:
+            raise ValueError("No HROPS data sheet found. Required headers include position number, position name and unit code/name.")
+
+        run.row_count = summary["rows_seen"]
+        run.validation_summary = summary
+        run.status = "COMPLETED" if summary["skipped"] == 0 else "COMPLETED_WITH_ERRORS"
+        db.flush()
+        return summary
+    finally:
+        workbook.close()
+
+
 app = FastAPI(title="CHRO HR1 Production API", version="3.0.0")
 app.add_middleware(
     CORSMiddleware,
@@ -364,8 +602,8 @@ def healthz():
 
 LOGIN_HTML = """<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>CHRO HR1</title><style>body{font-family:system-ui;margin:0;background:#f5f7fb;color:#172033}.w{max-width:1100px;margin:auto;padding:28px}.c{background:white;border:1px solid #dfe5ef;border-radius:14px;padding:20px;margin:14px 0}input,button{padding:10px;border-radius:8px;border:1px solid #cbd5e1;margin:4px}button{background:#0f5ea8;color:#fff;border:0}.muted{color:#64748b}table{width:100%;border-collapse:collapse}td,th{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left;font-size:14px}.scroll{overflow:auto}</style>
-<div class="w"><h1>CHRO HR1</h1><p class="muted">Production Console</p><div id="login" class="c"><form id="f"><input id="u" placeholder="Username" required><input id="p" type="password" placeholder="Password" required><button>Login</button></form><p id="m"></p></div><div id="app" style="display:none"><div class="c"><b id="who"></b> <span id="role"></span> <button id="out">Logout</button><p id="scope" class="muted"></p></div><div class="c"><h2>Positions</h2><input id="q" placeholder="Search"><button id="go">Search</button><p id="cnt"></p><div class="scroll"><table><thead><tr><th>CHRO</th><th>HROPS</th><th>Type</th><th>Position</th><th>Level</th><th>Unit</th></tr></thead><tbody id="rows"></tbody></table></div></div></div></div>
-<script>const K="chro_token",E=id=>document.getElementById(id),T=()=>sessionStorage.getItem(K);async function A(path,o={}){let h={...(o.headers||{})};if(T())h.Authorization="Bearer "+T();let r=await fetch(path,{...o,headers:h});if(!r.ok){let x=await r.json().catch(()=>({detail:"Request failed"}));throw Error(typeof x.detail==="string"?x.detail:JSON.stringify(x.detail))}return r.json()}async function positions(){let q=encodeURIComponent(E("q").value.trim()),d=await A("/api/positions"+(q?"?q="+q:""));E("cnt").textContent=d.total+" records";E("rows").innerHTML=d.positions.map(p=>`<tr><td>${p.chro_position_id||""}</td><td>${p.hrops_position_no||""}</td><td>${p.position_type||""}</td><td>${p.position_name_th||""}</td><td>${p.position_level||""}</td><td>${p.unit_name||""}</td></tr>`).join("")}async function me(){let x=await A("/api/auth/me");E("who").textContent=x.full_name+" ("+x.username+")";E("role").textContent=x.role;E("scope").textContent=x.unit_id?"Unit: "+x.unit_id:x.province_code?"Province: "+x.province_code:"Region-wide";E("login").style.display="none";E("app").style.display="block";positions()}E("f").onsubmit=async e=>{e.preventDefault();let b=new URLSearchParams({username:E("u").value,password:E("p").value});try{let r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:b});if(!r.ok)throw Error("Login failed");let x=await r.json();sessionStorage.setItem(K,x.access_token);me()}catch(x){E("m").textContent=x.message}};E("out").onclick=()=>{sessionStorage.removeItem(K);location.reload()};E("go").onclick=positions;if(T())me().catch(()=>sessionStorage.removeItem(K));</script></html>"""
+<div class="w"><h1>CHRO HR1</h1><p class="muted">Production Console</p><div id="login" class="c"><form id="f"><input id="u" placeholder="Username" required><input id="p" type="password" placeholder="Password" required><button>Login</button></form><p id="m"></p></div><div id="app" style="display:none"><div class="c"><b id="who"></b> <span id="role"></span> <button id="out">Logout</button><p id="scope" class="muted"></p></div><div id="hropsBox" class="c" style="display:none"><h2>HROPS → Database</h2><p class="muted">เลือกเดือน baseline และไฟล์ .xlsx ระบบจะอ่านไฟล์แล้วอัปเดตฐานข้อมูลทันที</p><input id="hm" type="month"><input id="hf" type="file" accept=".xlsx"><button id="hu">Upload & Update DB</button><pre id="hr"></pre></div><div class="c"><h2>Positions</h2><input id="q" placeholder="Search"><button id="go">Search</button><p id="cnt"></p><div class="scroll"><table><thead><tr><th>CHRO</th><th>HROPS</th><th>Type</th><th>Position</th><th>Level</th><th>Unit</th></tr></thead><tbody id="rows"></tbody></table></div></div></div></div>
+<script>const K="chro_token",E=id=>document.getElementById(id),T=()=>sessionStorage.getItem(K);async function A(path,o={}){let h={...(o.headers||{})};if(T())h.Authorization="Bearer "+T();let r=await fetch(path,{...o,headers:h});if(!r.ok){let x=await r.json().catch(()=>({detail:"Request failed"}));throw Error(typeof x.detail==="string"?x.detail:JSON.stringify(x.detail))}return r.json()}async function positions(){let q=encodeURIComponent(E("q").value.trim()),d=await A("/api/positions"+(q?"?q="+q:""));E("cnt").textContent=d.total+" records";E("rows").innerHTML=d.positions.map(p=>`<tr><td>${p.chro_position_id||""}</td><td>${p.hrops_position_no||""}</td><td>${p.position_type||""}</td><td>${p.position_name_th||""}</td><td>${p.position_level||""}</td><td>${p.unit_name||""}</td></tr>`).join("")}async function me(){let x=await A("/api/auth/me");E("who").textContent=x.full_name+" ("+x.username+")";E("role").textContent=x.role;E("scope").textContent=x.unit_id?"Unit: "+x.unit_id:x.province_code?"Province: "+x.province_code:"Region-wide";E("login").style.display="none";E("app").style.display="block";if(["MOPH_ADMIN","REGION_ADMIN"].includes(x.role))E("hropsBox").style.display="block";positions()}E("f").onsubmit=async e=>{e.preventDefault();let b=new URLSearchParams({username:E("u").value,password:E("p").value});try{let r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:b});if(!r.ok)throw Error("Login failed");let x=await r.json();sessionStorage.setItem(K,x.access_token);me()}catch(x){E("m").textContent=x.message}};E("out").onclick=()=>{sessionStorage.removeItem(K);location.reload()};E("go").onclick=positions;E("hu").onclick=async()=>{let f=E("hf").files[0],m=E("hm").value;if(!f||!m){E("hr").textContent="กรุณาเลือกเดือนและไฟล์ .xlsx";return}let b=new FormData();b.append("baseline_month",m+"-01");b.append("file",f);E("hr").textContent="กำลังอ่าน Excel และอัปเดตฐานข้อมูล...";try{let x=await A("/api/hrops/imports",{method:"POST",body:b});E("hr").textContent=JSON.stringify(x.summary,null,2);positions()}catch(x){E("hr").textContent=x.message}};if(T())me().catch(()=>sessionStorage.removeItem(K));</script></html>"""
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -538,16 +776,56 @@ async def upload_hrops(request: Request, baseline_month: date = Form(...), notes
     except Exception:
         target.unlink(missing_ok=True)
         raise
+
     digest = sha.hexdigest()
     duplicate = db.query(HropsImportRun).filter(HropsImportRun.baseline_month == baseline_month, HropsImportRun.sha256 == digest).first()
     if duplicate:
         target.unlink(missing_ok=True)
         raise HTTPException(status_code=409, detail={"message": "Duplicate HROPS file for month.", "import_id": duplicate.import_id})
-    run = HropsImportRun(baseline_month=baseline_month, original_filename=filename, stored_path=str(target), sha256=digest, file_size_bytes=total, status="RECEIVED", notes=notes, uploaded_by_user_id=user.user_id)
-    db.add(run); db.flush()
-    write_audit(db, user, "HROPS_FILE_RECEIVED", "hrops_import", run.import_id, request, after={"baseline_month": str(baseline_month), "filename": filename, "sha256": digest, "size": total})
-    db.commit()
-    return {"import_id": run.import_id, "status": run.status, "sha256": run.sha256, "file_size_bytes": run.file_size_bytes}
+
+    run = HropsImportRun(
+        baseline_month=baseline_month,
+        original_filename=filename,
+        stored_path=str(target),
+        sha256=digest,
+        file_size_bytes=total,
+        status="RECEIVED",
+        notes=notes,
+        uploaded_by_user_id=user.user_id,
+    )
+    db.add(run)
+    db.flush()
+
+    try:
+        summary = process_hrops_workbook(db, run)
+        write_audit(
+            db, user, "HROPS_DB_UPDATED", "hrops_import", run.import_id, request,
+            after={
+                "baseline_month": str(baseline_month),
+                "filename": filename,
+                "sha256": digest,
+                "size": total,
+                **{k: v for k, v in summary.items() if k != "errors"},
+            },
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        failed = db.get(HropsImportRun, run.import_id)
+        if failed:
+            failed.status = "FAILED"
+            failed.validation_summary = {"error": str(exc)}
+            db.commit()
+        raise HTTPException(status_code=422, detail=f"HROPS import failed: {exc}")
+
+    return {
+        "import_id": run.import_id,
+        "status": run.status,
+        "sha256": run.sha256,
+        "file_size_bytes": run.file_size_bytes,
+        "summary": summary,
+        "database_updated": True,
+    }
 
 
 @app.get("/api/audit")
