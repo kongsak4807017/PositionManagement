@@ -89,6 +89,7 @@ def get_overview():
             top_escalations.append({
                 "position_id": r["position_id"],
                 "position_name_th": r["position_name_th"],
+                "position_level": r["position_level"],
                 "cadre_group": r["cadre_group"],
                 "specialist_name": r["specialist_name"],
                 "province_name_th": r["province_name_th"],
@@ -155,9 +156,9 @@ def list_positions(
         sql += " AND p.current_milestone = ?"
         params.append(milestone)
     if q:
-        sql += " AND (p.position_id LIKE ? OR p.position_name_th LIKE ? OR p.specialist_name LIKE ? OR u.unit_name LIKE ?)"
+        sql += " AND (p.position_id LIKE ? OR p.position_name_th LIKE ? OR p.position_level LIKE ? OR p.specialist_name LIKE ? OR u.unit_name LIKE ?)"
         term = f"%{q}%"
-        params.extend([term, term, term, term])
+        params.extend([term, term, term, term, term])
 
     cur.execute(sql, params)
     rows = cur.fetchall()
