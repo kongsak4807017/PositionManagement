@@ -26,7 +26,12 @@ jobs:
           assert main.healthz()["status"] == "ok"
           overview = main.get_overview()
           assert overview["summary"]["total_positions"] == 22
-          assert len(main.list_positions()["positions"]) == 22
+          positions = main.list_positions()["positions"]
+          assert len(positions) == 22
+          assert "position_level" in positions[0]
+          assert "retirement_use_approved" in positions[0]
+          retirement = [p for p in positions if p["vacant_reason"] == "เกษียณอายุราชการ"]
+          assert len(retirement) == 5
           print("CHRO HR1 backend smoke test: PASS")
           PY
 
@@ -52,3 +57,7 @@ jobs:
           grep -q "localStorage" assets/v2-app.js
           grep -q "renderGovernance" assets/v2-app.js
           grep -q "openTimeline" assets/v2-app.js
+          grep -q "position_level" assets/v2-data.js
+          grep -q "fPositionLevel" assets/v2-app.js
+          grep -q "fRetirementApproved" assets/v2-app.js
+          grep -q "retirement_approval_doc_no" assets/v2-data.js
