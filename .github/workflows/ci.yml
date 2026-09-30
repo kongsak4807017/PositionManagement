@@ -49,12 +49,38 @@ jobs:
           db.add(user)
           db.commit()
 
-          def make_file(path, level):
+          def make_file(path, current_level):
               wb = Workbook()
-              ws = wb.active
-              ws.title = "HROPS"
-              ws.append(["เลขที่ตำแหน่ง","รหัสหน่วยงาน","ประเภทตำแหน่ง","ชื่อตำแหน่ง","ระดับตำแหน่ง","ประเภทการจ้าง","สถานะตำแหน่ง"])
-              ws.append(["99999","U5701","ข้าราชการ","นักวิชาการสาธารณสุข",level,"ข้าราชการ","ว่าง"])
+              summary = wb.active
+              summary.title = "สรุป"
+              ws = wb.create_sheet("เขต 1")
+              ws.append(["คำเตือน"])
+              ws.append(["ข้อมูลทดสอบ"])
+              ws.append(["ข้อมูล ณ วันที่"])
+              ws.append(list(range(1, 21)))
+              # Row 5: human-readable labels (not used by importer)
+              ws.append([
+                  "ประเภทบุคลากร","position_id","เลขที่ตำแหน่ง","รหัสจังหวัด",
+                  "จังหวัด","รหัสหน่วยงาน","ชื่อหน่วยงาน","ประเภทหน่วยงาน",
+                  "ชื่อตำแหน่ง","ประเภทตำแหน่ง","ระดับเริ่มต้น","ระดับสิ้นสุด",
+                  "ระดับปัจจุบัน","สถานะตำแหน่ง","สถานะการดำรงตำแหน่ง",
+                  "วันเกษียณ","วันที่ว่าง","สาเหตุว่าง","",""
+              ])
+              # Row 6: verified J18 technical headers
+              ws.append([
+                  "ประเภทบุคลากร","position_id","position_code","pos_province_code",
+                  "pos_province_name","pos_ou_path3_code","pos_rev_name","pos_ประเภทส่วนราชการ",
+                  "line_position_name","position_type_name","from_level_name","to_level_name",
+                  "pay_position_level_name","สถานะตำแหน่ง","employment_rev_status",
+                  "retirement_date","empty_date","empty_movement_name","",""
+              ])
+              ws.append([
+                  "1.ข้าราชการ","11111111-1111-1111-1111-111111111111","99999","57",
+                  "เชียงราย","U5701","รพศ.เชียงรายประชานุเคราะห์","รพศ.",
+                  "นักวิชาการสาธารณสุข","วิชาการ","ปฏิบัติการ","ชำนาญการพิเศษ",
+                  current_level,"1.มีคนครอง","ดำรงตำแหน่ง",
+                  None,None,None,None,None
+              ])
               wb.save(path)
 
           def run_import(path, month):
