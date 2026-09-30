@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CHRO HR1 — Position Management</title>
+  <link rel="stylesheet" href="/ui-assets/styles.css">
+</head>
+<body>
+  <div id="loginView" class="login-page">
+    <div class="login-panel">
+      <div class="brand-lockup">
+        <div class="brand-mark">HR1</div>
+        <div>
+          <div class="eyebrow">เขตสุขภาพที่ 1</div>
+          <h1>CHRO Position Management</h1>
+          <p>ระบบบริหารตำแหน่งว่างและฐานข้อมูล จ.18/HROPS</p>
+        </div>
+      </div>
+      <div class="login-copy">
+        <span class="status-pill">Production</span>
+        <h2>เข้าสู่ระบบ</h2>
+        <p>ใช้บัญชีที่ได้รับมอบหมายตามระดับสิทธิ์ของหน่วยงาน</p>
+      </div>
+      <form id="loginForm" class="form-stack">
+        <label>ชื่อผู้ใช้
+          <input id="loginUsername" name="username" autocomplete="username" required>
+        </label>
+        <label>รหัสผ่าน
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn btn-primary btn-wide" type="submit">เข้าสู่ระบบ</button>
+        <p id="loginMessage" class="form-message" aria-live="polite"></p>
+      </form>
+      <div class="login-note">ข้อมูลผู้ใช้และสิทธิ์ถูกตรวจสอบที่ API ทุกครั้ง ไม่ได้อาศัยการซ่อนเมนูเพียงอย่างเดียว</div>
+    </div>
+  </div>
+
+  <div id="appView" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark small">HR1</div>
+        <div><strong>CHRO HR1</strong><span>Position Management</span></div>
+      </div>
+      <nav id="mainNav" class="nav-list">
+        <button data-page="dashboard" class="nav-item active"><span>▦</span>ภาพรวม</button>
+        <button data-page="positions" class="nav-item"><span>◎</span>Position Master</button>
+        <button data-page="vacancies" class="nav-item"><span>◇</span>ตำแหน่งว่าง</button>
+        <button data-page="hrops" data-permission="hrops" class="nav-item"><span>⇧</span>นำเข้า จ.18 / HROPS</button>
+        <button data-page="users" data-permission="users" class="nav-item"><span>♙</span>ผู้ใช้งานและสิทธิ์</button>
+        <button data-page="audit" data-permission="audit" class="nav-item"><span>≡</span>Audit Log</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="sidebarScope" class="scope-box"></div>
+        <button id="logoutButton" class="btn btn-ghost btn-wide" type="button">ออกจากระบบ</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">CHRO HR1 • Health Region 1</div>
+          <h2 id="pageTitle">ภาพรวมระบบ</h2>
+        </div>
+        <div class="user-chip">
+          <div class="avatar" id="userInitial">U</div>
+          <div><strong id="userName">-</strong><span id="userRole">-</span></div>
+        </div>
+      </header>
+
+      <section id="page-dashboard" class="page active">
+        <div class="metric-grid">
+          <article class="metric-card"><span>Position Master</span><strong id="metricPositions">-</strong><small>ตำแหน่งในขอบเขตที่เห็นได้</small></article>
+          <article class="metric-card"><span>Vacancy Active</span><strong id="metricVacancies">-</strong><small>ตำแหน่งว่างที่ยังไม่ปิด</small></article>
+          <article class="metric-card"><span>รออนุมัติ บค.สป.</span><strong id="metricWaiting">-</strong><small>WAITING_APPROVAL</small></article>
+          <article class="metric-card"><span>กำลังสรรหา</span><strong id="metricRecruiting">-</strong><small>RECRUITING / APPOINTING</small></article>
+        </div>
+
+        <div class="two-col">
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">DATA FLOW</span><h3>การเกิดข้อมูลของระบบ</h3></div></div>
+            <div class="flow-grid">
+              <div class="flow-node accent"><b>1</b><strong>จ.18 / HROPS</strong><span>บค.เขต Upload รายเดือน</span></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-node"><b>2</b><strong>Position Master</strong><span>UPSERT ลงฐานข้อมูล</span></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-node"><b>3</b><strong>Vacancy Workflow</strong><span>สสจ. / รพศ. / รพท. บันทึก</span></div>
+              <div class="flow-arrow">→</div>
+              <div class="flow-node"><b>4</b><strong>Dashboard</strong><span>ติดตาม Aging / Bottleneck</span></div>
+            </div>
+            <div class="flow-rule">
+              <strong>หลักการสำคัญ</strong>
+              <span>HROPS อัปเดตข้อมูล Position Master แต่ไม่เขียนทับ workflow, หนังสือ, note หรือ event ที่พื้นที่บันทึกไว้</span>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">LATEST BASELINE</span><h3>สถานะข้อมูลรายเดือน</h3></div><button id="refreshDashboard" class="btn btn-ghost" type="button">รีเฟรช</button></div>
+            <div id="latestImport" class="baseline-card">ยังไม่มีข้อมูล</div>
+            <div class="role-summary">
+              <strong>สิทธิ์ปัจจุบัน</strong>
+              <div id="currentPermissionText">-</div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-positions" class="page">
+        <article class="panel">
+          <div class="panel-head wrap">
+            <div><span class="eyebrow">MASTER DATA</span><h3>ทะเบียนตำแหน่ง</h3></div>
+            <div class="toolbar">
+              <input id="positionSearch" placeholder="ค้นหาเลขที่ตำแหน่ง / ชื่อตำแหน่ง / หน่วยงาน">
+              <button id="positionSearchButton" class="btn btn-primary" type="button">ค้นหา</button>
+            </div>
+          </div>
+          <div class="table-meta"><span id="positionCount">0 รายการ</span><span>แสดงสูงสุด 100 รายการต่อครั้ง</span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>เลขที่ตำแหน่ง</th><th>ประเภท</th><th>ชื่อตำแหน่ง</th><th>ระดับ</th><th>หน่วยงาน</th><th>จังหวัด</th><th></th></tr></thead>
+              <tbody id="positionRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="page-vacancies" class="page">
+        <article class="panel">
+          <div class="panel-head"><div><span class="eyebrow">OPERATIONAL DATA</span><h3>Vacancy Workflow</h3></div><span class="status-pill neutral" id="vacancyScopeLabel"></span></div>
+          <div class="table-meta"><span id="vacancyCount">0 รายการ</span><span>กด “อัปเดต” เพื่อบันทึก Event/ขั้นตอน</span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Case</th><th>ตำแหน่ง</th><th>หน่วยงาน</th><th>วันที่ว่าง</th><th>สาเหตุ</th><th>Milestone</th><th>Status</th><th></th></tr></thead>
+              <tbody id="vacancyRows"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="page-hrops" class="page">
+        <div class="two-col hrops-layout">
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">MONTHLY IMPORT</span><h3>Upload จ.18 / HROPS → Database</h3></div></div>
+            <div class="notice info">
+              <strong>รูปแบบที่รองรับ</strong>
+              <span>อ่าน Sheet 2 “เขต 1”, technical header แถว 6 และข้อมูลเริ่มแถว 7 ตามไฟล์ จ18 1 กย 69</span>
+            </div>
+            <form id="hropsForm" class="form-grid">
+              <label>เดือน Baseline<input id="hropsMonth" type="month" required></label>
+              <label class="span-2">ไฟล์ .xlsx<input id="hropsFile" type="file" accept=".xlsx" required></label>
+              <label class="span-2">หมายเหตุ<input id="hropsNotes" placeholder="เช่น ข้อมูล จ.18 ณ 1 ต.ค. 2569"></label>
+              <div class="span-2 form-actions">
+                <button class="btn btn-primary" type="submit">Upload และ Update Database</button>
+                <span id="hropsProgress" class="muted"></span>
+              </div>
+            </form>
+            <div id="hropsResult" class="import-result hidden"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">IMPORT HISTORY</span><h3>ประวัติการนำเข้า</h3></div></div>
+            <div id="hropsHistory" class="history-list"></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-users" class="page">
+        <div class="two-col users-layout">
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">RBAC</span><h3>สร้างผู้ใช้งาน</h3></div></div>
+            <form id="userForm" class="form-grid">
+              <label>ชื่อ-สกุล<input id="newFullName" required></label>
+              <label>Username<input id="newUsername" required></label>
+              <label>รหัสผ่านเริ่มต้น<input id="newPassword" type="password" minlength="12" required></label>
+              <label>บทบาท<select id="newRole" required></select></label>
+              <label id="provinceField">จังหวัด<select id="newProvince"></select></label>
+              <label id="unitField">หน่วยงาน<select id="newUnit"></select></label>
+              <div class="span-2 form-actions"><button class="btn btn-primary" type="submit">สร้างบัญชี</button><span id="userFormMessage" class="muted"></span></div>
+            </form>
+            <div class="role-matrix">
+              <div><b>MOPH_ADMIN</b><span>ส่วนกลาง/ผู้ดูแลระบบ • ทุกข้อมูล • จัดการ user • upload HROPS • audit</span></div>
+              <div><b>REGION_ADMIN</b><span>บค.เขต • ทุกจังหวัด • upload HROPS • จัดการ user • workflow • audit</span></div>
+              <div><b>REGION_EXECUTIVE</b><span>ผู้บริหารเขต • อ่าน dashboard / position / vacancy ทั้งเขต</span></div>
+              <div><b>PROVINCE_ADMIN</b><span>สสจ. • เห็นและแก้ workflow เฉพาะจังหวัดตนเอง</span></div>
+              <div><b>HOSPITAL_HR</b><span>รพศ./รพท. • เห็นและแก้ workflow เฉพาะหน่วยงานตนเอง</span></div>
+              <div><b>AUDITOR</b><span>ผู้ตรวจสอบ • อ่านข้อมูลทั้งเขต + Audit Log • ไม่มีสิทธิ์แก้</span></div>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head"><div><span class="eyebrow">ACCOUNTS</span><h3>บัญชีในระบบ</h3></div></div>
+            <div class="table-wrap compact"><table><thead><tr><th>ผู้ใช้</th><th>Role</th><th>Scope</th><th>สถานะ</th></tr></thead><tbody id="userRows"></tbody></table></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="page-audit" class="page">
+        <article class="panel">
+          <div class="panel-head"><div><span class="eyebrow">GOVERNANCE</span><h3>Audit Log</h3></div><button id="refreshAudit" class="btn btn-ghost" type="button">รีเฟรช</button></div>
+          <div class="table-wrap">
+            <table><thead><tr><th>เวลา</th><th>Action</th><th>Entity</th><th>User ID</th><th>Path</th><th>IP</th></tr></thead><tbody id="auditRows"></tbody></table>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="vacancyDialog" class="dialog">
+    <form id="vacancyForm" method="dialog">
+      <div class="dialog-head"><div><span class="eyebrow">CREATE CASE</span><h3>เปิด Vacancy Case</h3></div><button type="button" class="icon-btn" data-close="vacancyDialog">×</button></div>
+      <div id="vacancyPositionLabel" class="selected-record"></div>
+      <input id="vacancyPositionUid" type="hidden">
+      <input id="vacancyUnitId" type="hidden">
+      <div class="form-grid">
+        <label>เลข Case<input id="vacancyCaseNo" required placeholder="VAC-2569-0001"></label>
+        <label>วันที่ว่าง<input id="vacancyDate" type="date" required></label>
+        <label>สาเหตุการว่าง<select id="vacancyReason"><option>เกษียณอายุราชการ</option><option>ลาออก</option><option>ย้าย</option><option>เสียชีวิต</option><option>อื่น ๆ</option></select></label>
+        <label>Milestone<select id="vacancyMilestone"><option>M1</option><option>M2</option><option>M3</option><option>M4</option><option>M5</option><option>M6</option></select></label>
+        <label class="span-2">หมายเหตุ<textarea id="vacancyRemarks" rows="3"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn btn-ghost" data-close="vacancyDialog">ยกเลิก</button><button class="btn btn-primary" type="submit">สร้าง Case</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="eventDialog" class="dialog">
+    <form id="eventForm" method="dialog">
+      <div class="dialog-head"><div><span class="eyebrow">WORKFLOW EVENT</span><h3>อัปเดตขั้นตอนตำแหน่งว่าง</h3></div><button type="button" class="icon-btn" data-close="eventDialog">×</button></div>
+      <div id="eventCaseLabel" class="selected-record"></div>
+      <input id="eventCaseId" type="hidden">
+      <div class="form-grid">
+        <label>Event<select id="eventType"><option value="STATUS_UPDATED">อัปเดตสถานะ</option><option value="DOCUMENT_RECEIVED">รับหนังสือ</option><option value="RETIREMENT_USE_APPROVED">บค.สป. อนุมัติให้ใช้ตำแหน่ง</option><option value="RECRUITMENT_STARTED">เริ่มสรรหา</option><option value="APPOINTMENT_PROGRESS">ดำเนินการบรรจุ/แต่งตั้ง</option><option value="NOTE">บันทึกหมายเหตุ</option></select></label>
+        <label>Status<select id="eventStatus"><option value="">คงเดิม</option><option>OPEN</option><option>WAITING_APPROVAL</option><option>READY_TO_RECRUIT</option><option>RECRUITING</option><option>APPOINTING</option><option>FILLED</option><option>CANCELLED</option></select></label>
+        <label>Milestone<select id="eventMilestone"><option value="">คงเดิม</option><option>M1</option><option>M2</option><option>M3</option><option>M4</option><option>M5</option><option>M6</option></select></label>
+        <label>เลขหนังสือ<input id="eventDocNo"></label>
+        <label class="span-2 checkbox-line"><input id="eventRetirementApproved" type="checkbox"> บค.สป. อนุมัติให้ใช้ตำแหน่งเกษียณแล้ว</label>
+        <label>วันที่หนังสือ<input id="eventDocDate" type="date"></label>
+        <label>ใช้ตำแหน่งได้ตั้งแต่<input id="eventUseFrom" type="date"></label>
+        <label class="span-2">หมายเหตุ<textarea id="eventNotes" rows="3"></textarea></label>
+      </div>
+      <div class="dialog-actions"><button type="button" class="btn btn-ghost" data-close="eventDialog">ยกเลิก</button><button class="btn btn-primary" type="submit">บันทึก Event</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <script src="/ui-assets/app.js" defer></script>
+</body>
+</html>
