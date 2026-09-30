@@ -13,7 +13,8 @@ import jwt
 from openpyxl import load_workbook
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jwt import InvalidTokenError
 from passlib.context import CryptContext
@@ -32,6 +33,7 @@ JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_MINUTES = int(os.getenv("ACCESS_TOKEN_MINUTES", "480"))
 HROPS_STORAGE_DIR = Path(os.getenv("HROPS_STORAGE_DIR", "./data/hrops"))
 MAX_HROPS_UPLOAD_MB = int(os.getenv("MAX_HROPS_UPLOAD_MB", "100"))
+PRODUCTION_UI_DIR = Path(__file__).resolve().parent / "production_ui"
 ALLOWED_ORIGINS = [
     x.strip() for x in os.getenv(
         "ALLOWED_ORIGINS",
@@ -697,7 +699,8 @@ def process_hrops_workbook(db: Session, run: HropsImportRun) -> dict:
         workbook.close()
 
 
-app = FastAPI(title="CHRO HR1 Production API", version="3.0.0")
+app = FastAPI(title="CHRO HR1 Production API", version="3.1.0")
+app.mount("/ui-assets", StaticFiles(directory=str(PRODUCTION_UI_DIR)), name="ui-assets")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -715,7 +718,7 @@ def startup():
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "service": "chro-hr1", "version": "3.0.0"}
+    return {"status": "ok", "service": "chro-hr1", "version": "3.1.0"}
 
 
 LOGIN_HTML = """<!doctype html><html lang="th"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -724,9 +727,9 @@ LOGIN_HTML = """<!doctype html><html lang="th"><meta charset="utf-8"><meta name=
 <script>const K="chro_token",E=id=>document.getElementById(id),T=()=>sessionStorage.getItem(K);async function A(path,o={}){let h={...(o.headers||{})};if(T())h.Authorization="Bearer "+T();let r=await fetch(path,{...o,headers:h});if(!r.ok){let x=await r.json().catch(()=>({detail:"Request failed"}));throw Error(typeof x.detail==="string"?x.detail:JSON.stringify(x.detail))}return r.json()}async function positions(){let q=encodeURIComponent(E("q").value.trim()),d=await A("/api/positions"+(q?"?q="+q:""));E("cnt").textContent=d.total+" records";E("rows").innerHTML=d.positions.map(p=>`<tr><td>${p.chro_position_id||""}</td><td>${p.hrops_position_no||""}</td><td>${p.position_type||""}</td><td>${p.position_name_th||""}</td><td>${p.position_level||""}</td><td>${p.unit_name||""}</td></tr>`).join("")}async function me(){let x=await A("/api/auth/me");E("who").textContent=x.full_name+" ("+x.username+")";E("role").textContent=x.role;E("scope").textContent=x.unit_id?"Unit: "+x.unit_id:x.province_code?"Province: "+x.province_code:"Region-wide";E("login").style.display="none";E("app").style.display="block";if(["MOPH_ADMIN","REGION_ADMIN"].includes(x.role))E("hropsBox").style.display="block";positions()}E("f").onsubmit=async e=>{e.preventDefault();let b=new URLSearchParams({username:E("u").value,password:E("p").value});try{let r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:b});if(!r.ok)throw Error("Login failed");let x=await r.json();sessionStorage.setItem(K,x.access_token);me()}catch(x){E("m").textContent=x.message}};E("out").onclick=()=>{sessionStorage.removeItem(K);location.reload()};E("go").onclick=positions;E("hu").onclick=async()=>{let f=E("hf").files[0],m=E("hm").value;if(!f||!m){E("hr").textContent="กรุณาเลือกเดือนและไฟล์ .xlsx";return}let b=new FormData();b.append("baseline_month",m+"-01");b.append("file",f);E("hr").textContent="กำลังอ่าน Excel และอัปเดตฐานข้อมูล...";try{let x=await A("/api/hrops/imports",{method:"POST",body:b});E("hr").textContent=JSON.stringify(x.summary,null,2);positions()}catch(x){E("hr").textContent=x.message}};if(T())me().catch(()=>sessionStorage.removeItem(K));</script></html>"""
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 def home():
-    return LOGIN_HTML
+    return FileResponse(PRODUCTION_UI_DIR / "index.html")
 
 
 @app.post("/api/auth/login", response_model=TokenResponse)
@@ -745,6 +748,103 @@ def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Ses
 @app.get("/api/auth/me")
 def me(user: User = Depends(current_user)):
     return {"user_id": user.user_id, "username": user.username, "full_name": user.full_name, "role": user.role, "province_code": user.province_code, "unit_id": user.unit_id}
+
+
+def scoped_position_query(db: Session, user: User):
+    query = db.query(Position, OrganizationalUnit).join(
+        OrganizationalUnit, Position.unit_id == OrganizationalUnit.unit_id
+    )
+    if user.role == UserRole.PROVINCE_ADMIN:
+        query = query.filter(OrganizationalUnit.province_code == user.province_code)
+    elif user.role == UserRole.HOSPITAL_HR:
+        query = query.filter(Position.unit_id == user.unit_id)
+    elif user.role not in READ_ALL:
+        query = query.filter(Position.position_uid == "__denied__")
+    return query
+
+
+def scoped_vacancy_query(db: Session, user: User):
+    query = db.query(VacancyCase, Position, OrganizationalUnit).join(
+        Position, VacancyCase.position_uid == Position.position_uid
+    ).join(
+        OrganizationalUnit, Position.unit_id == OrganizationalUnit.unit_id
+    )
+    if user.role == UserRole.PROVINCE_ADMIN:
+        query = query.filter(OrganizationalUnit.province_code == user.province_code)
+    elif user.role == UserRole.HOSPITAL_HR:
+        query = query.filter(VacancyCase.responsible_unit_id == user.unit_id)
+    elif user.role not in READ_ALL:
+        query = query.filter(VacancyCase.case_id == "__denied__")
+    return query
+
+
+@app.get("/api/reference")
+def reference_data(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    provinces = db.query(Province).order_by(Province.province_code).all()
+    units_query = db.query(OrganizationalUnit)
+
+    if user.role == UserRole.PROVINCE_ADMIN:
+        provinces = [p for p in provinces if p.province_code == user.province_code]
+        units_query = units_query.filter(OrganizationalUnit.province_code == user.province_code)
+    elif user.role == UserRole.HOSPITAL_HR:
+        provinces = [p for p in provinces if p.province_code == (
+            db.get(OrganizationalUnit, user.unit_id).province_code if db.get(OrganizationalUnit, user.unit_id) else None
+        )]
+        units_query = units_query.filter(OrganizationalUnit.unit_id == user.unit_id)
+
+    units = units_query.order_by(OrganizationalUnit.province_code, OrganizationalUnit.unit_name).all()
+    return {
+        "provinces": [
+            {"province_code": p.province_code, "province_name_th": p.province_name_th}
+            for p in provinces
+        ],
+        "units": [
+            {
+                "unit_id": u.unit_id,
+                "unit_name": u.unit_name,
+                "unit_type": u.unit_type_label,
+                "province_code": u.province_code,
+                "amphur_name": u.amphur_name,
+            }
+            for u in units
+        ],
+    }
+
+
+@app.get("/api/dashboard/summary")
+def dashboard_summary(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    position_query = scoped_position_query(db, user)
+    positions_total = position_query.count()
+
+    vacancy_query = scoped_vacancy_query(db, user)
+    vacancies_active = vacancy_query.filter(
+        VacancyCase.status.notin_([VacancyStatus.FILLED, VacancyStatus.CANCELLED])
+    ).count()
+    waiting_approval = vacancy_query.filter(
+        VacancyCase.status == VacancyStatus.WAITING_APPROVAL
+    ).count()
+    recruiting_or_appointing = vacancy_query.filter(
+        VacancyCase.status.in_([VacancyStatus.RECRUITING, VacancyStatus.APPOINTING])
+    ).count()
+
+    latest = db.query(HropsImportRun).filter(
+        HropsImportRun.status.in_(["COMPLETED", "COMPLETED_WITH_ERRORS"])
+    ).order_by(HropsImportRun.baseline_month.desc(), HropsImportRun.created_at.desc()).first()
+
+    return {
+        "positions_total": positions_total,
+        "vacancies_active": vacancies_active,
+        "waiting_approval": waiting_approval,
+        "recruiting_or_appointing": recruiting_or_appointing,
+        "latest_import": None if latest is None else {
+            "import_id": latest.import_id,
+            "baseline_month": latest.baseline_month,
+            "original_filename": latest.original_filename,
+            "status": latest.status,
+            "row_count": latest.row_count,
+            "created_at": latest.created_at,
+        },
+    }
 
 
 @app.get("/api/admin/users")
@@ -788,19 +888,47 @@ def create_position(payload: PositionCreate, request: Request, user: User = Depe
 
 
 @app.get("/api/positions")
-def positions(q: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    query = db.query(Position, OrganizationalUnit).join(OrganizationalUnit, Position.unit_id == OrganizationalUnit.unit_id)
-    if user.role == UserRole.PROVINCE_ADMIN:
-        query = query.filter(OrganizationalUnit.province_code == user.province_code)
-    elif user.role == UserRole.HOSPITAL_HR:
-        query = query.filter(Position.unit_id == user.unit_id)
-    elif user.role not in READ_ALL:
-        query = query.filter(Position.position_uid == "__denied__")
+def positions(
+    q: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    query = scoped_position_query(db, user)
     if q:
         term = f"%{q.strip()}%"
-        query = query.filter(or_(Position.chro_position_id.ilike(term), Position.hrops_position_no.ilike(term), Position.position_name_th.ilike(term), Position.position_level.ilike(term), OrganizationalUnit.unit_name.ilike(term)))
-    rows = query.order_by(OrganizationalUnit.province_code, OrganizationalUnit.unit_name).limit(2000).all()
-    return {"total": len(rows), "positions": [{"position_uid": p.position_uid, "chro_position_id": p.chro_position_id, "hrops_position_no": p.hrops_position_no, "position_type": p.position_type, "position_name_th": p.position_name_th, "position_level": p.position_level, "employment_type": p.employment_type, "unit_id": u.unit_id, "unit_name": u.unit_name, "province_code": u.province_code} for p, u in rows]}
+        query = query.filter(or_(
+            Position.chro_position_id.ilike(term),
+            Position.hrops_position_no.ilike(term),
+            Position.position_name_th.ilike(term),
+            Position.position_level.ilike(term),
+            OrganizationalUnit.unit_name.ilike(term),
+        ))
+    total = query.count()
+    rows = query.order_by(
+        OrganizationalUnit.province_code,
+        OrganizationalUnit.unit_name,
+        Position.hrops_position_no,
+    ).offset(max(0, offset)).limit(max(1, min(limit, 500))).all()
+    return {
+        "total": total,
+        "positions": [
+            {
+                "position_uid": p.position_uid,
+                "chro_position_id": p.chro_position_id,
+                "hrops_position_no": p.hrops_position_no,
+                "position_type": p.position_type,
+                "position_name_th": p.position_name_th,
+                "position_level": p.position_level,
+                "employment_type": p.employment_type,
+                "unit_id": u.unit_id,
+                "unit_name": u.unit_name,
+                "province_code": u.province_code,
+            }
+            for p, u in rows
+        ],
+    }
 
 
 @app.post("/api/vacancies", status_code=201)
@@ -821,16 +949,55 @@ def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depend
 
 
 @app.get("/api/vacancies")
-def vacancies(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    query = db.query(VacancyCase, Position, OrganizationalUnit).join(Position, VacancyCase.position_uid == Position.position_uid).join(OrganizationalUnit, Position.unit_id == OrganizationalUnit.unit_id)
-    if user.role == UserRole.PROVINCE_ADMIN:
-        query = query.filter(OrganizationalUnit.province_code == user.province_code)
-    elif user.role == UserRole.HOSPITAL_HR:
-        query = query.filter(VacancyCase.responsible_unit_id == user.unit_id)
-    elif user.role not in READ_ALL:
-        query = query.filter(VacancyCase.case_id == "__denied__")
-    rows = query.order_by(VacancyCase.updated_at.desc()).limit(2000).all()
-    return {"total": len(rows), "vacancies": [{"case_id": c.case_id, "case_no": c.case_no, "chro_position_id": p.chro_position_id, "position_name_th": p.position_name_th, "position_level": p.position_level, "unit_name": u.unit_name, "province_code": u.province_code, "vacant_date": c.vacant_date, "vacant_reason": c.vacant_reason, "status": c.status, "current_milestone": c.current_milestone, "retirement_use_approved": c.retirement_use_approved, "retirement_approval_doc_no": c.retirement_approval_doc_no, "retirement_use_from_date": c.retirement_use_from_date, "remarks": c.remarks} for c, p, u in rows]}
+def vacancies(
+    q: str | None = None,
+    status: VacancyStatus | None = None,
+    limit: int = 200,
+    offset: int = 0,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    query = scoped_vacancy_query(db, user)
+    if status is not None:
+        query = query.filter(VacancyCase.status == status)
+    if q:
+        term = f"%{q.strip()}%"
+        query = query.filter(or_(
+            VacancyCase.case_no.ilike(term),
+            Position.hrops_position_no.ilike(term),
+            Position.position_name_th.ilike(term),
+            OrganizationalUnit.unit_name.ilike(term),
+        ))
+    total = query.count()
+    rows = query.order_by(VacancyCase.updated_at.desc()).offset(max(0, offset)).limit(max(1, min(limit, 500))).all()
+    return {
+        "total": total,
+        "vacancies": [
+            {
+                "case_id": case.case_id,
+                "case_no": case.case_no,
+                "position_uid": p.position_uid,
+                "hrops_position_no": p.hrops_position_no,
+                "chro_position_id": p.chro_position_id,
+                "position_name_th": p.position_name_th,
+                "position_level": p.position_level,
+                "responsible_unit_id": case.responsible_unit_id,
+                "unit_name": u.unit_name,
+                "province_code": u.province_code,
+                "vacant_date": case.vacant_date,
+                "vacant_reason": case.vacant_reason,
+                "status": case.status,
+                "current_milestone": case.current_milestone,
+                "retirement_use_approved": case.retirement_use_approved,
+                "retirement_approval_doc_no": case.retirement_approval_doc_no,
+                "retirement_approval_doc_date": case.retirement_approval_doc_date,
+                "retirement_use_from_date": case.retirement_use_from_date,
+                "remarks": case.remarks,
+                "updated_at": case.updated_at,
+            }
+            for case, p, u in rows
+        ],
+    }
 
 
 @app.post("/api/vacancies/{case_id}/events", status_code=201)
