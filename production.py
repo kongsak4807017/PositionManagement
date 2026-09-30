@@ -342,32 +342,45 @@ def write_audit(db: Session, user: User | None, action: str, entity_type: str, e
     ))
 
 
-HROPS_HEADER_ALIASES = {
-    "hrops_position_no": ["เลขที่ตำแหน่ง", "เลขตำแหน่ง", "เลขที่ตำแหน่งhrops", "hropspositionno", "positionno", "positionnumber"],
-    "chro_position_id": ["chropositionid", "chroid"],
-    "unit_id": ["รหัสหน่วยงาน", "รหัสหน่วยบริการ", "รหัสส่วนราชการ", "unitid", "orgcode", "organizationcode"],
-    "unit_name": ["ชื่อหน่วยงาน", "หน่วยงาน", "หน่วยบริการ", "สถานบริการ", "ส่วนราชการ", "unitname", "organization"],
-    "unit_type": ["ประเภทหน่วยงาน", "ประเภทหน่วยบริการ", "unittype"],
-    "province_code": ["รหัสจังหวัด", "provincecode", "changwatcode"],
-    "province_name": ["จังหวัด", "ชื่อจังหวัด", "provincename"],
-    "position_type": ["ประเภทตำแหน่ง", "positiontype"],
-    "position_name_th": ["ชื่อตำแหน่ง", "ชื่อตำแหน่งภาษาไทย", "positionname", "positionnameth"],
-    "position_level": ["ระดับตำแหน่ง", "ระดับ", "positionlevel"],
-    "employment_type": ["ประเภทการจ้าง", "ประเภทการจ้างงาน", "employmenttype"],
-    "holder_status": ["สถานะผู้ครองตำแหน่ง", "สถานะตำแหน่ง", "holderstatus", "positionstatus"],
+J18_DATA_SHEET_INDEX = 1          # Sheet 2: "เขต 1"
+J18_TECHNICAL_HEADER_ROW = 6     # Row 5 = Thai labels, Row 6 = stable technical field names
+
+# Mapping verified against "จ18 1 กย 69", Sheet 2 ("เขต 1").
+# Position master uses the "ตาม อต." / pos_* organizational fields because vacant
+# positions still retain those fields even when person/pay_* fields are blank.
+J18_FIELD_MAP = {
+    "external_position_id": "position_id",
+    "hrops_position_no": "position_code",
+    "unit_id": "pos_ou_path3_code",
+    "unit_name": "pos_rev_name",
+    "unit_type": "pos_ประเภทส่วนราชการ",
+    "province_code": "pos_province_code",
+    "province_name": "pos_province_name",
+    "amphur_name": "pos_amphur_name",
+    "position_name_th": "line_position_name",
+    "position_type": "position_type_name",
+    "position_level_from": "from_level_name",
+    "position_level_to": "to_level_name",
+    "current_position_level": "pay_position_level_name",
+    "employment_type": "ประเภทบุคลากร",
+    "holder_status": "สถานะตำแหน่ง",
+    "employment_status": "employment_rev_status",
+    "retirement_date": "retirement_date",
+    "vacancy_date": "empty_date",
+    "vacancy_reason": "empty_movement_name",
 }
 
-
-def normalize_header(value) -> str:
-    if value is None:
-        return ""
-    return re.sub(r"[\s_\-./():]+", "", str(value).strip().lower())
-
-
-HROPS_ALIAS_LOOKUP = {
-    normalize_header(alias): canonical
-    for canonical, aliases in HROPS_HEADER_ALIASES.items()
-    for alias in aliases
+J18_REQUIRED_TECHNICAL_HEADERS = {
+    "position_id",
+    "position_code",
+    "pos_ou_path3_code",
+    "pos_rev_name",
+    "pos_province_code",
+    "line_position_name",
+    "position_type_name",
+    "from_level_name",
+    "to_level_name",
+    "สถานะตำแหน่ง",
 }
 
 
@@ -390,19 +403,44 @@ def text_value(value) -> str | None:
     return text or None
 
 
-def detect_hrops_header(ws):
-    """Return (header_row_number, canonical->column_index) or (None, {})."""
-    for row_no, row in enumerate(ws.iter_rows(min_row=1, max_row=30, values_only=True), start=1):
-        mapping = {}
-        for col_no, value in enumerate(row, start=1):
-            canonical = HROPS_ALIAS_LOOKUP.get(normalize_header(value))
-            if canonical and canonical not in mapping:
-                mapping[canonical] = col_no
-        required_identity = "hrops_position_no" in mapping and "position_name_th" in mapping
-        required_unit = "unit_id" in mapping or "unit_name" in mapping
-        if required_identity and required_unit:
-            return row_no, mapping
-    return None, {}
+def compose_position_level(record: dict) -> str | None:
+    """Use actual current level when occupied; otherwise use the authorized level range."""
+    holder_status = text_value(record.get("holder_status")) or ""
+    current = text_value(record.get("current_position_level"))
+    level_from = text_value(record.get("position_level_from"))
+    level_to = text_value(record.get("position_level_to"))
+
+    if holder_status.startswith("1.") and current:
+        return current
+    if level_from and level_to and level_from != level_to:
+        return f"{level_from} - {level_to}"
+    return level_from or level_to or current
+
+
+def build_j18_mapping(ws):
+    technical_headers = list(next(ws.iter_rows(
+        min_row=J18_TECHNICAL_HEADER_ROW,
+        max_row=J18_TECHNICAL_HEADER_ROW,
+        values_only=True,
+    )))
+    header_index = {
+        text_value(value): col_no
+        for col_no, value in enumerate(technical_headers, start=1)
+        if text_value(value)
+    }
+    missing = sorted(J18_REQUIRED_TECHNICAL_HEADERS - set(header_index))
+    if missing:
+        raise ValueError(
+            "Sheet 2 does not match the verified J18/HROPS schema. "
+            f"Missing technical headers on row 6: {', '.join(missing)}"
+        )
+
+    mapping = {
+        canonical: header_index[technical]
+        for canonical, technical in J18_FIELD_MAP.items()
+        if technical in header_index
+    }
+    return mapping, len(technical_headers)
 
 
 def resolve_or_create_unit(db: Session, record: dict) -> OrganizationalUnit | None:
@@ -410,6 +448,7 @@ def resolve_or_create_unit(db: Session, record: dict) -> OrganizationalUnit | No
     unit_name = text_value(record.get("unit_name"))
     province_code = text_value(record.get("province_code"))
     unit_type = text_value(record.get("unit_type")) or "HROPS"
+    amphur_name = text_value(record.get("amphur_name"))
 
     if unit_id:
         unit = db.get(OrganizationalUnit, unit_id)
@@ -418,6 +457,8 @@ def resolve_or_create_unit(db: Session, record: dict) -> OrganizationalUnit | No
                 unit.unit_name = unit_name
             if unit_type and unit.unit_type_label != unit_type:
                 unit.unit_type_label = unit_type
+            if amphur_name and unit.amphur_name != amphur_name:
+                unit.amphur_name = amphur_name
             return unit
 
         if province_code and db.get(Province, province_code):
@@ -426,13 +467,16 @@ def resolve_or_create_unit(db: Session, record: dict) -> OrganizationalUnit | No
                 unit_name=unit_name or unit_id,
                 unit_type_label=unit_type,
                 province_code=province_code,
+                amphur_name=amphur_name,
             )
             db.add(unit)
             db.flush()
             return unit
 
     if unit_name:
-        matches = db.query(OrganizationalUnit).filter(OrganizationalUnit.unit_name == unit_name).all()
+        matches = db.query(OrganizationalUnit).filter(
+            OrganizationalUnit.unit_name == unit_name
+        ).all()
         if len(matches) == 1:
             return matches[0]
 
@@ -441,134 +485,208 @@ def resolve_or_create_unit(db: Session, record: dict) -> OrganizationalUnit | No
 
 def process_hrops_workbook(db: Session, run: HropsImportRun) -> dict:
     """
-    Stream an HROPS XLSX and UPSERT Position rows in the same database.
-    VacancyCase/VacancyEvent are deliberately preserved and never overwritten.
+    Verified monthly J18/HROPS import:
+    - reads only Sheet 2 ("เขต 1")
+    - uses technical headers on row 6
+    - data begins on row 7
+    - UPSERTs Position Master
+    - writes monthly HROPS snapshots
+    - never overwrites VacancyCase/VacancyEvent operational workflow data
     """
     run.status = "PROCESSING"
     db.flush()
 
     summary = {
-        "sheets_processed": 0,
+        "source_sheet": None,
+        "technical_header_row": J18_TECHNICAL_HEADER_ROW,
+        "columns_detected": 0,
         "rows_seen": 0,
         "inserted": 0,
         "updated": 0,
         "unchanged": 0,
+        "occupied": 0,
+        "vacant": 0,
+        "other_status": 0,
         "skipped": 0,
         "duplicates": 0,
         "errors": [],
     }
-    seen_position_nos = set()
+    seen_keys = set()
 
     workbook = load_workbook(run.stored_path, read_only=True, data_only=True)
     try:
-        for ws in workbook.worksheets:
-            header_row, mapping = detect_hrops_header(ws)
-            if not header_row:
+        if len(workbook.worksheets) <= J18_DATA_SHEET_INDEX:
+            raise ValueError("J18/HROPS workbook must contain at least 2 sheets.")
+
+        ws = workbook.worksheets[J18_DATA_SHEET_INDEX]
+        summary["source_sheet"] = ws.title
+        mapping, column_count = build_j18_mapping(ws)
+        summary["columns_detected"] = column_count
+
+        for excel_row_no, row in enumerate(
+            ws.iter_rows(min_row=J18_TECHNICAL_HEADER_ROW + 1, values_only=True),
+            start=J18_TECHNICAL_HEADER_ROW + 1,
+        ):
+            if not any(v is not None and str(v).strip() for v in row):
                 continue
-            summary["sheets_processed"] += 1
+            summary["rows_seen"] += 1
 
-            for excel_row_no, row in enumerate(
-                ws.iter_rows(min_row=header_row + 1, values_only=True),
-                start=header_row + 1,
-            ):
-                if not any(v is not None and str(v).strip() for v in row):
-                    continue
-                summary["rows_seen"] += 1
+            record = {}
+            for canonical, col_no in mapping.items():
+                value = row[col_no - 1] if col_no - 1 < len(row) else None
+                record[canonical] = json_value(value)
 
-                record = {}
-                for canonical, col_no in mapping.items():
-                    value = row[col_no - 1] if col_no - 1 < len(row) else None
-                    record[canonical] = json_value(value)
+            position_no = text_value(record.get("hrops_position_no"))
+            external_position_id = text_value(record.get("external_position_id"))
+            position_name = text_value(record.get("position_name_th"))
+            holder_status = text_value(record.get("holder_status")) or ""
 
-                position_no = text_value(record.get("hrops_position_no"))
-                position_name = text_value(record.get("position_name_th"))
-                if not position_no or not position_name:
-                    summary["skipped"] += 1
-                    if len(summary["errors"]) < 100:
-                        summary["errors"].append({"sheet": ws.title, "row": excel_row_no, "reason": "missing position number or position name"})
-                    continue
+            if holder_status.startswith("1."):
+                summary["occupied"] += 1
+            elif holder_status.startswith("2."):
+                summary["vacant"] += 1
+            else:
+                summary["other_status"] += 1
 
-                if position_no in seen_position_nos:
-                    summary["duplicates"] += 1
-                    continue
-                seen_position_nos.add(position_no)
+            if not position_no or not position_name:
+                summary["skipped"] += 1
+                if len(summary["errors"]) < 100:
+                    summary["errors"].append({
+                        "sheet": ws.title,
+                        "row": excel_row_no,
+                        "position_no": position_no,
+                        "reason": "missing position_code or line_position_name",
+                    })
+                continue
 
-                unit = resolve_or_create_unit(db, record)
-                if not unit:
-                    summary["skipped"] += 1
-                    if len(summary["errors"]) < 100:
-                        summary["errors"].append({
-                            "sheet": ws.title,
-                            "row": excel_row_no,
-                            "position_no": position_no,
-                            "reason": "unit could not be matched; provide unit code/name and province code",
-                        })
-                    continue
+            source_key = external_position_id or position_no
+            if source_key in seen_keys:
+                summary["duplicates"] += 1
+                continue
+            seen_keys.add(source_key)
 
-                position = db.query(Position).filter(Position.hrops_position_no == position_no).first()
-                created = position is None
-                if created:
-                    requested_chro_id = text_value(record.get("chro_position_id"))
-                    chro_id = requested_chro_id or f"HROPS-{position_no}"
-                    if db.query(Position).filter(Position.chro_position_id == chro_id).first():
-                        chro_id = f"HROPS-{position_no}-{uuid4().hex[:8]}"
-                    position = Position(
-                        chro_position_id=chro_id,
-                        hrops_position_no=position_no,
-                        unit_id=unit.unit_id,
-                        position_type=text_value(record.get("position_type")),
-                        position_name_th=position_name,
-                        position_level=text_value(record.get("position_level")),
-                        employment_type=text_value(record.get("employment_type")),
-                        is_active=True,
-                    )
-                    db.add(position)
-                    db.flush()
-                    summary["inserted"] += 1
-                else:
-                    before = (
-                        position.unit_id,
-                        position.position_type,
-                        position.position_name_th,
-                        position.position_level,
-                        position.employment_type,
-                    )
-                    position.unit_id = unit.unit_id
-                    position.position_type = text_value(record.get("position_type"))
-                    position.position_name_th = position_name
-                    position.position_level = text_value(record.get("position_level"))
-                    position.employment_type = text_value(record.get("employment_type"))
-                    position.is_active = True
-                    after = (
-                        position.unit_id,
-                        position.position_type,
-                        position.position_name_th,
-                        position.position_level,
-                        position.employment_type,
-                    )
-                    if before == after:
-                        summary["unchanged"] += 1
-                    else:
-                        summary["updated"] += 1
+            unit = resolve_or_create_unit(db, record)
+            if not unit:
+                summary["skipped"] += 1
+                if len(summary["errors"]) < 100:
+                    summary["errors"].append({
+                        "sheet": ws.title,
+                        "row": excel_row_no,
+                        "position_no": position_no,
+                        "unit_id": text_value(record.get("unit_id")),
+                        "unit_name": text_value(record.get("unit_name")),
+                        "province_code": text_value(record.get("province_code")),
+                        "reason": "position organization could not be matched/created",
+                    })
+                continue
 
-                db.add(HropsPositionSnapshot(
-                    import_id=run.import_id,
-                    snapshot_month=run.baseline_month,
-                    position_uid=position.position_uid,
+            stable_chro_id = (
+                f"HROPS-{external_position_id}"
+                if external_position_id
+                else f"HROPS-POS-{position_no}"
+            )
+
+            position = db.query(Position).filter(
+                Position.chro_position_id == stable_chro_id
+            ).first()
+            if position is None:
+                position = db.query(Position).filter(
+                    Position.hrops_position_no == position_no
+                ).first()
+
+            position_level = compose_position_level(record)
+            created = position is None
+
+            if created:
+                chro_id = stable_chro_id
+                if db.query(Position).filter(Position.chro_position_id == chro_id).first():
+                    chro_id = f"{stable_chro_id}-{uuid4().hex[:8]}"
+
+                position = Position(
+                    chro_position_id=chro_id,
                     hrops_position_no=position_no,
                     unit_id=unit.unit_id,
                     position_type=text_value(record.get("position_type")),
                     position_name_th=position_name,
-                    position_level=text_value(record.get("position_level")),
-                    holder_status=text_value(record.get("holder_status")),
-                    raw_payload={k: json_value(v) for k, v in record.items()},
-                ))
+                    position_level=position_level,
+                    employment_type=text_value(record.get("employment_type")),
+                    is_active=True,
+                )
+                db.add(position)
+                db.flush()
+                summary["inserted"] += 1
+            else:
+                before = (
+                    position.hrops_position_no,
+                    position.unit_id,
+                    position.position_type,
+                    position.position_name_th,
+                    position.position_level,
+                    position.employment_type,
+                    position.is_active,
+                )
+                position.hrops_position_no = position_no
+                position.unit_id = unit.unit_id
+                position.position_type = text_value(record.get("position_type"))
+                position.position_name_th = position_name
+                position.position_level = position_level
+                position.employment_type = text_value(record.get("employment_type"))
+                position.is_active = True
+                after = (
+                    position.hrops_position_no,
+                    position.unit_id,
+                    position.position_type,
+                    position.position_name_th,
+                    position.position_level,
+                    position.employment_type,
+                    position.is_active,
+                )
+                if before == after:
+                    summary["unchanged"] += 1
+                else:
+                    summary["updated"] += 1
 
-                if summary["rows_seen"] % 1000 == 0:
-                    db.flush()
+            # Deliberately store only position/baseline fields in the DB snapshot.
+            # Sensitive person-level fields (e.g. citizen_no) remain in the protected source file
+            # and are not duplicated into the operational database without a defined use case.
+            snapshot_payload = {
+                "source_sheet": ws.title,
+                "source_row": excel_row_no,
+                "external_position_id": external_position_id,
+                "hrops_position_no": position_no,
+                "unit_id": unit.unit_id,
+                "unit_name": unit.unit_name,
+                "province_code": text_value(record.get("province_code")),
+                "province_name": text_value(record.get("province_name")),
+                "position_type": text_value(record.get("position_type")),
+                "position_name_th": position_name,
+                "position_level_from": text_value(record.get("position_level_from")),
+                "position_level_to": text_value(record.get("position_level_to")),
+                "current_position_level": text_value(record.get("current_position_level")),
+                "position_level": position_level,
+                "employment_type": text_value(record.get("employment_type")),
+                "holder_status": holder_status,
+                "employment_status": text_value(record.get("employment_status")),
+                "retirement_date": record.get("retirement_date"),
+                "vacancy_date": record.get("vacancy_date"),
+                "vacancy_reason": text_value(record.get("vacancy_reason")),
+            }
 
-        if summary["sheets_processed"] == 0:
-            raise ValueError("No HROPS data sheet found. Required headers include position number, position name and unit code/name.")
+            db.add(HropsPositionSnapshot(
+                import_id=run.import_id,
+                snapshot_month=run.baseline_month,
+                position_uid=position.position_uid,
+                hrops_position_no=position_no,
+                unit_id=unit.unit_id,
+                position_type=text_value(record.get("position_type")),
+                position_name_th=position_name,
+                position_level=position_level,
+                holder_status=holder_status,
+                raw_payload=snapshot_payload,
+            ))
+
+            if summary["rows_seen"] % 1000 == 0:
+                db.flush()
 
         run.row_count = summary["rows_seen"]
         run.validation_summary = summary
