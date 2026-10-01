@@ -358,7 +358,8 @@
     byId('j18Employment').value = baselineFilters.employment;
     byId('j18Province').onchange = () => { baselineFilters.province = byId('j18Province').value; baselinePage = 1; renderBaseline(); };
     byId('j18Employment').onchange = () => { baselineFilters.employment = byId('j18Employment').value; baselinePage = 1; renderBaseline(); };
-    byId('j18Search').oninput = () => { baselineFilters.q = byId('j18Search').value; baselinePage = 1; renderBaseline(); };
+    byId('j18Search').onchange = () => { baselineFilters.q = byId('j18Search').value; baselinePage = 1; renderBaseline(); };
+    byId('j18Search').onkeydown = (e) => { if (e.key === 'Enter') { baselineFilters.q = byId('j18Search').value; baselinePage = 1; renderBaseline(); } };
     byId('j18Clear').onclick = () => { baselineFilters.province=''; baselineFilters.employment=''; baselineFilters.q=''; baselinePage=1; renderBaseline(); };
     byId('j18Prev').onclick = () => { if (baselinePage>1) { baselinePage--; renderBaseline(); } };
     byId('j18Next').onclick = () => { if (baselinePage<pages) { baselinePage++; renderBaseline(); } };
