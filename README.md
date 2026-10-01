@@ -1,5 +1,16 @@
 # CHRO HR1 Position Management
 
+## J18 baseline (September 2569)
+
+GitHub Pages loads the verified Region 1 J18/HROPS baseline dated **1 September 2569**.
+
+- Total positions: **39,607**
+- Occupied: **36,027**
+- Vacant: **3,580**
+- Public preview excludes person-level identifiers and compensation fields.
+- J18 baseline data is kept separate from operational workflow fields (M1-M6, SLA, bottlenecks), which must be maintained by responsible HR users.
+
+
 ระบบบริหารตำแหน่งว่าง เขตสุขภาพที่ 1 — **Position Master + HROPS Monthly Baseline + Vacancy Workflow + Audit Trail**
 
 Repository นี้มี 2 surface แยกกัน:
