@@ -2,8 +2,22 @@
   'use strict';
 
   const STORAGE_KEY = 'chro_hr1_preview_v2_state';
-  const UI_KEY = 'chro_hr1_preview_v2_ui';
+  const UI_KEY = 'chro_hr1_preview_v2_ui_j18_20260901';
   const seed = window.CHRO_V2_SEED;
+  const j18Compact = window.CHRO_J18_BASELINE_COMPACT || null;
+  const baselineFilters = {province:'', employment:'', q:''};
+  let baselinePage = 1;
+
+  function inflateJ18(compact) {
+    if (!compact || !Array.isArray(compact.fields) || !Array.isArray(compact.rows)) return null;
+    const fields = compact.fields;
+    return {
+      meta: compact.meta || {},
+      province_summary: compact.province_summary || [],
+      vacancies: compact.rows.map(row => Object.fromEntries(fields.map((key, i) => [key, row[i] ?? null])))
+    };
+  }
+  const j18Baseline = inflateJ18(j18Compact);
   if (!seed) {
     document.body.innerHTML = '<div style="padding:2rem;font-family:sans-serif">CHRO HR1 seed data failed to load.</div>';
     return;
@@ -62,7 +76,7 @@
       if (saved) return saved;
     } catch (_) {}
     return {
-      tab: 'overview',
+      tab: 'baseline',
       role: 'hosp_operator',
       scope: 'U5701',
       filters: {province:'', cadre:'', milestone:'', sla:'', q:''}
@@ -171,7 +185,7 @@
       '<div id="toast" class="fixed right-4 top-4 z-[100] hidden rounded-xl bg-slate-900 px-4 py-3 text-sm text-white shadow-xl"></div>',
       '<div class="min-h-screen bg-slate-50 text-slate-800">',
       '  <div class="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-xs text-amber-900">',
-      '    🧪 <b>CHRO HR1 Full Interactive Preview v2</b> • Static GitHub Pages prototype • ข้อมูลที่แก้ไขบันทึกเฉพาะใน browser นี้',
+      '    <b>CHRO HR1</b> • ฐานข้อมูล จ.18 ณ 1 ก.ย. 2569: 39,607 ตำแหน่ง • ว่าง 3,580 ตำแหน่ง • Workflow ที่พื้นที่แก้ไขบันทึกเฉพาะใน browser นี้',
       '  </div>',
       '  <header class="sticky top-0 z-40 bg-gradient-to-r from-emerald-900 via-teal-900 to-cyan-950 text-white shadow-lg">',
       '    <div class="mx-auto max-w-[1720px] px-4 py-3">',
@@ -192,7 +206,8 @@
       '        </div>',
       '      </div>',
       '      <nav class="mt-3 flex gap-1 overflow-x-auto border-t border-white/10 pt-2 text-sm">',
-      navButton('overview','📊','ภาพรวม'),
+      navButton('baseline','🗂️','จ.18 Baseline'),
+      navButton('overview','📊','Workflow'),
       navButton('positions','📋','ตำแหน่ง'),
       navButton('analytics','🔍','Analytics'),
       navButton('governance','🏛️','Governance'),
@@ -201,13 +216,14 @@
       '    </div>',
       '  </header>',
       '  <main class="mx-auto max-w-[1720px] p-4 sm:p-6">',
-      '    <section id="view-overview"></section>',
+      '    <section id="view-baseline"></section>',
+      '    <section id="view-overview" class="hidden"></section>',
       '    <section id="view-positions" class="hidden"></section>',
       '    <section id="view-analytics" class="hidden"></section>',
       '    <section id="view-governance" class="hidden"></section>',
       '    <section id="view-admin" class="hidden"></section>',
       '  </main>',
-      '  <footer class="border-t border-slate-200 bg-white px-4 py-5 text-center text-xs text-slate-500">CHRO HR1 Preview v2 • Prototype for workflow validation, not a production HROPS replacement.</footer>',
+      '  <footer class="border-t border-slate-200 bg-white px-4 py-5 text-center text-xs text-slate-500">CHRO HR1 • จ.18 Baseline 1 ก.ย. 2569 + Operational Workflow Preview</footer>',
       '</div>',
       '<div id="modalRoot"></div>',
       '<input id="importJsonInput" type="file" accept=".json,application/json" class="hidden">'
@@ -243,7 +259,8 @@
   }
 
   function renderCurrent() {
-    if (ui.tab === 'overview') renderOverview();
+    if (ui.tab === 'baseline') renderBaseline();
+    else if (ui.tab === 'overview') renderOverview();
     else if (ui.tab === 'positions') renderPositions();
     else if (ui.tab === 'analytics') renderAnalytics();
     else if (ui.tab === 'governance') renderGovernance();
@@ -267,6 +284,96 @@
       +'<div class="text-xs font-semibold uppercase tracking-wide text-slate-500">'+esc(label)+'</div>'
       +'<div class="mt-1 text-3xl font-black '+tone+'">'+esc(value)+'</div>'
       +'<div class="mt-1 text-xs text-slate-500">'+esc(sub)+'</div></div>';
+  }
+
+
+  function renderBaseline() {
+    const root = byId('view-baseline');
+    if (!j18Baseline) {
+      root.innerHTML = '<div class="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">ไม่พบไฟล์ baseline จ.18 ในชุด deploy นี้</div>';
+      return;
+    }
+    const meta = j18Baseline.meta || {};
+    const all = j18Baseline.vacancies || [];
+    let rows = all.slice();
+    const q = baselineFilters.q.trim().toLowerCase();
+    if (baselineFilters.province) rows = rows.filter(r => r.province_code === baselineFilters.province);
+    if (baselineFilters.employment) rows = rows.filter(r => r.employment_type === baselineFilters.employment);
+    if (q) rows = rows.filter(r => [
+      r.hrops_position_no, r.province_name, r.amphur_name, r.unit_name,
+      r.position_name, r.position_level, r.specialist_name, r.vacancy_reason
+    ].some(v => String(v || '').toLowerCase().includes(q)));
+
+    const pageSize = 100;
+    const pages = Math.max(1, Math.ceil(rows.length / pageSize));
+    baselinePage = Math.min(Math.max(1, baselinePage), pages);
+    const pageRows = rows.slice((baselinePage - 1) * pageSize, baselinePage * pageSize);
+    const vacancyRate = Number(meta.source_rows || 0) ? (Number(meta.vacant || 0) / Number(meta.source_rows) * 100).toFixed(1) : '0.0';
+    const empTypes = [...new Set(all.map(r => r.employment_type).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'th'));
+
+    const provinceCards = (j18Baseline.province_summary || []).map(p =>
+      '<button type="button" class="j18-province rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-indigo-300" data-code="'+esc(p.province_code)+'">'
+      +'<div class="text-xs text-slate-500">'+esc(p.province_name)+'</div><div class="mt-1 text-2xl font-black text-slate-900">'+Number(p.vacant||0).toLocaleString('th-TH')+'</div>'
+      +'<div class="text-xs text-slate-400">ตำแหน่งว่าง</div></button>'
+    ).join('');
+
+    const optionsProvince = '<option value="">ทุกจังหวัด</option>' + (j18Baseline.province_summary || []).map(p =>
+      '<option value="'+esc(p.province_code)+'">'+esc(p.province_name)+' ('+Number(p.vacant||0).toLocaleString('th-TH')+')</option>'
+    ).join('');
+    const optionsEmp = '<option value="">ทุกประเภทบุคลากร</option>' + empTypes.map(x => '<option value="'+esc(x)+'">'+esc(x)+'</option>').join('');
+
+    root.innerHTML = [
+      '<div class="mb-5 flex flex-wrap items-end justify-between gap-3">',
+      ' <div><h1 class="text-xl font-black text-slate-900">ฐานข้อมูล จ.18 เขตสุขภาพที่ 1</h1><p class="text-sm text-slate-500">ข้อมูล ณ วันที่ 1 กันยายน 2569 • แสดงเฉพาะข้อมูลระดับตำแหน่ง ไม่แสดงข้อมูลระบุตัวบุคคล</p></div>',
+      ' <div class="text-right text-xs text-slate-500">Source: '+esc(meta.source_file||'จ18 1 กย 69')+'<br>'+Number(meta.source_rows||0).toLocaleString('th-TH')+' records</div>',
+      '</div>',
+      '<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">',
+      metricCard('ตำแหน่งทั้งหมด',Number(meta.source_rows||0).toLocaleString('th-TH'),'จากไฟล์ จ.18','text-slate-900'),
+      metricCard('มีคนครอง',Number(meta.occupied||0).toLocaleString('th-TH'),'สถานะ 1.มีคนครอง','text-emerald-600'),
+      metricCard('ตำแหน่งว่าง',Number(meta.vacant||0).toLocaleString('th-TH'),'สถานะ 2.ตำแหน่งว่าง','text-rose-600'),
+      metricCard('Vacancy rate',vacancyRate+'%','ว่าง / ตำแหน่งทั้งหมด','text-indigo-600'),
+      '</div>',
+      '<div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">'+provinceCards+'</div>',
+      '<div class="mt-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">',
+      ' <div class="grid gap-3 lg:grid-cols-[220px_240px_1fr_auto_auto]">',
+      '  <select id="j18Province" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">'+optionsProvince+'</select>',
+      '  <select id="j18Employment" class="rounded-lg border border-slate-300 px-3 py-2 text-sm">'+optionsEmp+'</select>',
+      '  <input id="j18Search" class="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="ค้นหาเลขตำแหน่ง หน่วยงาน ตำแหน่ง หรือเหตุว่าง" value="'+esc(baselineFilters.q)+'">',
+      '  <button id="j18Clear" class="rounded-lg border border-slate-300 px-4 py-2 text-sm">ล้าง</button>',
+      '  <button id="j18Export" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">CSV</button>',
+      ' </div>',
+      ' <div class="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>พบ '+rows.length.toLocaleString('th-TH')+' ตำแหน่ง • แสดง '+pageRows.length.toLocaleString('th-TH')+' รายการในหน้านี้</span><span>หน้า '+baselinePage.toLocaleString('th-TH')+' / '+pages.toLocaleString('th-TH')+'</span></div>',
+      '</div>',
+      '<div class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">',
+      ' <div class="overflow-x-auto"><table class="min-w-[1250px] w-full text-left text-xs"><thead class="bg-slate-50 text-slate-500"><tr>',
+      '  <th class="p-3">เลขตำแหน่ง</th><th class="p-3">จังหวัด</th><th class="p-3">หน่วยงาน</th><th class="p-3">ตำแหน่ง</th><th class="p-3">ระดับ</th><th class="p-3">ประเภทบุคลากร</th><th class="p-3">วันที่ว่าง</th><th class="p-3">เหตุว่าง</th>',
+      ' </tr></thead><tbody>',
+      pageRows.map(r => '<tr class="border-t border-slate-100 align-top"><td class="p-3 font-mono font-bold">'+esc(r.hrops_position_no||'-')+'</td><td class="p-3">'+esc(r.province_name||'-')+'</td><td class="p-3"><b>'+esc(r.unit_prefix||'')+esc(r.unit_name||'-')+'</b><span class="block text-[11px] text-slate-400">'+esc(r.amphur_name||'')+(r.service_plan?' • '+esc(r.service_plan):'')+'</span></td><td class="p-3"><b>'+esc(r.position_name||'-')+'</b><span class="block text-[11px] text-slate-400">'+esc(r.specialist_name||'')+'</span></td><td class="p-3">'+esc(r.position_level||'-')+'</td><td class="p-3">'+esc(r.employment_type||'-')+'</td><td class="p-3 whitespace-nowrap">'+esc(r.vacancy_date||'-')+'</td><td class="p-3 max-w-[360px]">'+esc(r.vacancy_reason||'-')+'</td></tr>').join(''),
+      ' </tbody></table></div>',
+      ' <div class="flex items-center justify-between border-t border-slate-200 p-3"><button id="j18Prev" class="rounded-lg border border-slate-300 px-3 py-2 text-xs '+(baselinePage<=1?'opacity-40':'')+'">← ก่อนหน้า</button><span class="text-xs text-slate-500">ข้อมูล จ.18 ระบุให้ตรวจสอบรายละเอียดรายตำแหน่งก่อนนำไปใช้เชิงปฏิบัติการ</span><button id="j18Next" class="rounded-lg border border-slate-300 px-3 py-2 text-xs '+(baselinePage>=pages?'opacity-40':'')+'">ถัดไป →</button></div>',
+      '</div>'
+    ].join('');
+
+    byId('j18Province').value = baselineFilters.province;
+    byId('j18Employment').value = baselineFilters.employment;
+    byId('j18Province').onchange = () => { baselineFilters.province = byId('j18Province').value; baselinePage = 1; renderBaseline(); };
+    byId('j18Employment').onchange = () => { baselineFilters.employment = byId('j18Employment').value; baselinePage = 1; renderBaseline(); };
+    byId('j18Search').oninput = () => { baselineFilters.q = byId('j18Search').value; baselinePage = 1; renderBaseline(); };
+    byId('j18Clear').onclick = () => { baselineFilters.province=''; baselineFilters.employment=''; baselineFilters.q=''; baselinePage=1; renderBaseline(); };
+    byId('j18Prev').onclick = () => { if (baselinePage>1) { baselinePage--; renderBaseline(); } };
+    byId('j18Next').onclick = () => { if (baselinePage<pages) { baselinePage++; renderBaseline(); } };
+    document.querySelectorAll('.j18-province').forEach(btn => btn.onclick = () => { baselineFilters.province=btn.dataset.code; baselinePage=1; renderBaseline(); });
+    byId('j18Export').onclick = () => exportJ18Csv(rows);
+  }
+
+  function exportJ18Csv(rows) {
+    const headers=['เลขตำแหน่ง','จังหวัด','อำเภอ','หน่วยงาน','ประเภทหน่วยงาน','Service plan','ตำแหน่ง','ประเภทตำแหน่ง','ระดับตำแหน่ง','สาขา','ประเภทบุคลากร','วันที่ว่าง','เหตุว่าง'];
+    const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+    const lines=[headers.map(quote).join(',')].concat(rows.map(r=>[
+      r.hrops_position_no,r.province_name,r.amphur_name,(r.unit_prefix||'')+(r.unit_name||''),r.unit_type,r.service_plan,
+      r.position_name,r.position_type,r.position_level,r.specialist_name,r.employment_type,r.vacancy_date,r.vacancy_reason
+    ].map(quote).join(',')));
+    downloadBlob('\uFEFF'+lines.join('\n'),'CHRO_HR1_J18_2569-09-01.csv','text/csv;charset=utf-8');
   }
 
   function renderOverview() {
@@ -815,5 +922,5 @@
   normalizeScope();
   renderHeaderState();
   bindGlobal();
-  setTab(ui.tab || 'overview');
+  setTab(ui.tab || 'baseline');
 })();
