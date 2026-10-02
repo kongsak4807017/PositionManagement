@@ -13,6 +13,27 @@
     AUDITOR: { hrops:false, users:false, audit:true, write:false, scope:"ทั้งเขตสุขภาพที่ 1", permission:"ผู้ตรวจสอบ: อ่านข้อมูลทั้งเขตและ Audit Log โดยไม่มีสิทธิ์แก้ไข" }
   };
 
+  const PROCESS_STATUS = {
+    PROVINCE:["บค.สสจ. ตรวจสอบ","CHRO จังหวัด พิจารณา"],
+    REGION:["CHRO เขต พิจารณา"],
+    MOPH:[
+      "อนุมัติ บรรจุผู้สอบแข่งขัน","อนุมัติ บรรจุผู้ได้รับคัดเลือก","อนุมัติ ปรับปรุง",
+      "อนุมัติ ยุบกำหนดตำแหน่งสูงขึ้น","อนุมัติ รับย้าย (ระบุชื่อ)","อนุมัติ รับโอน (ระบุชื่อ)",
+      "อนุมัติ รับย้าย/รับโอน","อนุมัติ เลื่อน","อนุมัติ เกลี่ย","อนุมัติ เปลี่ยนตำแหน่ง",
+      "อนุมัติ เปลี่ยนประเภทการจ้าง","อนุมัติ จ้างทดแทน","อื่นๆ"
+    ],
+    DONE:["ดำเนินการเสร็จสิ้น"]
+  };
+  const PROCESS_LEVEL_LABEL = {PROVINCE:"ระดับจังหวัด",REGION:"ระดับเขต",MOPH:"ระดับ สป.",DONE:"เสร็จสิ้น"};
+
+  function fillProcessStatus(levelId,statusId,allowKeep=false) {
+    const level = $(levelId).value || (allowKeep ? "" : "PROVINCE");
+    const previous = $(statusId).value;
+    const options = level ? (PROCESS_STATUS[level] || []) : [];
+    $(statusId).innerHTML = (allowKeep ? '<option value="">คงเดิม</option>' : "") + options.map(x => '<option value="'+esc(x)+'">'+esc(x)+'</option>').join("");
+    if ([...$(statusId).options].some(o => o.value === previous)) $(statusId).value = previous;
+  }
+
   const pageTitles = {
     dashboard:"ภาพรวมระบบ", positions:"Position Master", vacancies:"ตำแหน่งว่างและ Workflow",
     hrops:"นำเข้า จ.18 / HROPS", users:"ผู้ใช้งานและสิทธิ์", audit:"Audit Log"
@@ -169,7 +190,7 @@
   }
 
   async function loadVacancies() {
-    $("vacancyRows").innerHTML = '<tr><td colspan="8">กำลังโหลด...</td></tr>';
+    $("vacancyRows").innerHTML = '<tr><td colspan="9">กำลังโหลด...</td></tr>';
     try {
       const d = await api("/api/vacancies?limit=200");
       $("vacancyCount").textContent = Number(d.total || 0).toLocaleString("th-TH") + " รายการ";
@@ -177,10 +198,11 @@
       $("vacancyRows").innerHTML = (d.vacancies || []).map(v => {
         const action = canWrite ? '<button class="btn btn-ghost update-vacancy" data-case="'+esc(v.case_id)+'" data-label="'+esc(v.case_no+" • "+v.position_name_th)+'">อัปเดต</button>' : "";
         const approve = v.retirement_use_approved ? '<div class="cell-sub">✓ บค.สป. อนุมัติแล้ว</div>' : "";
-        return '<tr><td><div class="cell-title">'+esc(v.case_no)+'</div></td><td>'+esc(v.position_name_th)+'<div class="cell-sub">'+esc(v.position_level || "-")+'</div></td><td>'+esc(v.unit_name)+'</td><td>'+fmtDate(v.vacant_date)+'</td><td>'+esc(v.vacant_reason)+approve+'</td><td>'+esc(v.current_milestone)+'</td><td>'+statusBadge(v.status)+'</td><td>'+action+'</td></tr>';
-      }).join("") || '<tr><td colspan="8">ยังไม่มี Vacancy Case</td></tr>';
+        const process = '<span class="badge blue">'+esc(PROCESS_LEVEL_LABEL[v.process_level] || v.process_level || "-")+'</span><div class="cell-title">'+esc(v.process_status || "-")+'</div>'+(v.process_detail?'<div class="cell-sub">'+esc(v.process_detail)+'</div>':'');
+        return '<tr><td><div class="cell-title">'+esc(v.case_no)+'</div></td><td>'+esc(v.position_name_th)+'<div class="cell-sub">'+esc(v.position_level || "-")+'</div></td><td>'+esc(v.unit_name)+'</td><td>'+fmtDate(v.vacant_date)+'</td><td>'+esc(v.vacant_reason)+approve+'</td><td>'+process+'</td><td>'+esc(v.current_milestone)+'</td><td>'+statusBadge(v.status)+'</td><td>'+action+'</td></tr>';
+      }).join("") || '<tr><td colspan="9">ยังไม่มี Vacancy Case</td></tr>';
       document.querySelectorAll(".update-vacancy").forEach(btn => btn.addEventListener("click", () => openEventDialog(btn)));
-    } catch (e) { $("vacancyRows").innerHTML = '<tr><td colspan="8">'+esc(e.message)+'</td></tr>'; }
+    } catch (e) { $("vacancyRows").innerHTML = '<tr><td colspan="9">'+esc(e.message)+'</td></tr>'; }
   }
 
   function openVacancyDialog(btn) {
@@ -189,6 +211,9 @@
     $("vacancyPositionLabel").textContent = btn.dataset.label;
     $("vacancyCaseNo").value = "VAC-" + new Date().getFullYear() + "-";
     $("vacancyDate").value = new Date().toISOString().slice(0,10);
+    $("vacancyProcessLevel").value = "PROVINCE";
+    fillProcessStatus("vacancyProcessLevel","vacancyProcessStatus");
+    $("vacancyProcessDetail").value = "";
     $("vacancyRemarks").value = "";
     $("vacancyDialog").showModal();
   }
@@ -199,6 +224,9 @@
     $("eventType").value = "STATUS_UPDATED";
     $("eventStatus").value = "";
     $("eventMilestone").value = "";
+    $("eventProcessLevel").value = "";
+    fillProcessStatus("eventProcessLevel","eventProcessStatus",true);
+    $("eventProcessDetail").value = "";
     $("eventDocNo").value = "";
     $("eventRetirementApproved").checked = false;
     $("eventDocDate").value = "";
@@ -268,6 +296,8 @@
   $("refreshAudit").addEventListener("click", loadAudit);
   $("newProvince").addEventListener("change", renderUnitOptions);
   $("newRole").addEventListener("change", updateScopeFields);
+  $("vacancyProcessLevel").addEventListener("change", () => fillProcessStatus("vacancyProcessLevel","vacancyProcessStatus"));
+  $("eventProcessLevel").addEventListener("change", () => fillProcessStatus("eventProcessLevel","eventProcessStatus",true));
 
   document.querySelectorAll(".nav-item").forEach(btn => btn.addEventListener("click", () => navigate(btn.dataset.page)));
   document.querySelectorAll("[data-close]").forEach(btn => btn.addEventListener("click", () => $(btn.dataset.close).close()));
@@ -283,6 +313,9 @@
         vacant_reason:$("vacancyReason").value,
         status:"OPEN",
         current_milestone:$("vacancyMilestone").value,
+        process_level:$("vacancyProcessLevel").value,
+        process_status:$("vacancyProcessStatus").value,
+        process_detail:$("vacancyProcessDetail").value.trim() || null,
         remarks:$("vacancyRemarks").value.trim() || null
       };
       await api("/api/vacancies",{method:"POST",body:JSON.stringify(payload)});
@@ -300,6 +333,9 @@
         event_type:$("eventType").value,
         to_status:$("eventStatus").value || null,
         milestone:$("eventMilestone").value || null,
+        process_level:$("eventProcessLevel").value || null,
+        process_status:$("eventProcessStatus").value || null,
+        process_detail:$("eventProcessDetail").value.trim() || null,
         reference_doc_no:$("eventDocNo").value.trim() || null,
         notes:$("eventNotes").value.trim() || null,
         retirement_use_approved:$("eventRetirementApproved").checked ? true : null,
