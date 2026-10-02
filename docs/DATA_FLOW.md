@@ -166,7 +166,50 @@ Monthly comparison should identify:
 
 No mismatch should silently modify a historical `Vacancy Case`.
 
-## 8. Audit minimum
+## 8. Hierarchical process status per position
+
+Every active vacancy case has two separate workflow dimensions:
+
+- `current_milestone` = lifecycle milestone (M1–M6)
+- `process_level + process_status` = where the case is currently being considered and what decision/action is pending
+
+```mermaid
+flowchart LR
+    H[รพ./หน่วยงานต้นทาง] --> P1[บค.สสจ. ตรวจสอบ]
+    P1 --> P2[CHRO จังหวัด พิจารณา]
+    P2 --> R1[CHRO เขต พิจารณา]
+    R1 --> M[สป. / ส่วนกลาง]
+    M --> A1[อนุมัติ บรรจุผู้สอบแข่งขัน]
+    M --> A2[อนุมัติ บรรจุผู้ได้รับคัดเลือก]
+    M --> A3[อนุมัติ ปรับปรุง]
+    M --> A4[อนุมัติ ยุบกำหนดตำแหน่งสูงขึ้น]
+    M --> A5[อนุมัติ รับย้าย / รับโอน]
+    M --> A6[อนุมัติ เลื่อน / เกลี่ย]
+    M --> A7[อนุมัติ เปลี่ยนตำแหน่ง / ประเภทการจ้าง]
+    M --> A8[อนุมัติ จ้างทดแทน / อื่นๆ]
+    A1 --> D[ดำเนินการเสร็จสิ้น]
+    A2 --> D
+    A3 --> D
+    A4 --> D
+    A5 --> D
+    A6 --> D
+    A7 --> D
+    A8 --> D
+```
+
+### Process-level write permissions
+
+| User role | จังหวัด | เขต | สป. | เสร็จสิ้น |
+|---|---:|---:|---:|---:|
+| `HOSPITAL_HR` | Yes | No | No | No |
+| `PROVINCE_ADMIN` | Yes | Yes (ส่งต่อ/ระบุว่าถึงเขต) | No | No |
+| `REGION_ADMIN` | Yes | Yes | Yes | Yes |
+| `MOPH_ADMIN` | Yes | Yes | Yes | Yes |
+| Executive / Auditor | Read only | Read only | Read only | Read only |
+
+For transfer/accept-transfer statuses, `process_detail` stores the person/reference detail requested by the operational workflow. Every change is also written to the vacancy event/audit trail.
+
+## 9. Audit minimum
 
 Record at least:
 
