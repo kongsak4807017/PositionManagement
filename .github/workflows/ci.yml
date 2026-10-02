@@ -144,6 +144,22 @@ jobs:
           assert production.scoped_position_query(db, hospital_user).count() == 1
           production.assert_unit_scope(db, province_user, "U5701", write=True)
           production.assert_unit_scope(db, hospital_user, "U5701", write=True)
+          production.validate_process_state("PROVINCE", "บค.สสจ. ตรวจสอบ")
+          production.validate_process_state("REGION", "CHRO เขต พิจารณา")
+          production.validate_process_state("MOPH", "อนุมัติ รับย้าย (ระบุชื่อ)")
+          production.validate_process_permission(hospital_user, "PROVINCE")
+          production.validate_process_permission(province_user, "REGION")
+          production.validate_process_permission(user, "MOPH")
+          try:
+              production.validate_process_permission(hospital_user, "REGION")
+              raise AssertionError("Hospital user must not set REGION process level")
+          except production.HTTPException as exc:
+              assert exc.status_code == 403
+          try:
+              production.validate_process_permission(province_user, "MOPH")
+              raise AssertionError("Province user must not set MOPH process level")
+          except production.HTTPException as exc:
+              assert exc.status_code == 403
           try:
               production.assert_unit_scope(db, executive, "U5701", write=True)
               raise AssertionError("Executive write access must be denied")
@@ -186,6 +202,10 @@ jobs:
           grep -q "PROVINCE_ADMIN" production_ui/index.html
           grep -q "HOSPITAL_HR" production_ui/index.html
           grep -q "/api/dashboard/summary" production_ui/app.js
+          grep -q "CHRO เขต พิจารณา" production_ui/app.js
+          grep -q "อนุมัติ รับย้าย (ระบุชื่อ)" production_ui/app.js
+          grep -q "process_level" assets/v2-app.js
+          grep -q "สถานะเลขตำแหน่ง: จังหวัด" assets/v2-app.js
 
   deployment-files:
     runs-on: ubuntu-latest
