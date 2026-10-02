@@ -21,7 +21,7 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy import (
     JSON, Boolean, Column, Date, DateTime, Enum, ForeignKey, Integer,
-    String, Text, UniqueConstraint, create_engine, func, or_,
+    String, Text, UniqueConstraint, create_engine, func, inspect, or_, text,
 )
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -174,6 +174,10 @@ class VacancyCase(Base):
     vacant_reason = Column(String(150), nullable=False)
     status = Column(Enum(VacancyStatus, native_enum=False), nullable=False, default=VacancyStatus.OPEN, index=True)
     current_milestone = Column(String(10), nullable=False, default="M1", index=True)
+    process_level = Column(String(20), nullable=False, default="PROVINCE", index=True)
+    process_status = Column(String(160), nullable=False, default="บค.สสจ. ตรวจสอบ", index=True)
+    process_detail = Column(String(255))
+    process_updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     retirement_use_approved = Column(Boolean, nullable=False, default=False)
     retirement_approval_doc_no = Column(String(180))
     retirement_approval_doc_date = Column(Date)
@@ -245,6 +249,9 @@ class VacancyCreate(BaseModel):
     vacant_reason: str = Field(min_length=2, max_length=150)
     status: VacancyStatus = VacancyStatus.OPEN
     current_milestone: str = Field(default="M1", max_length=10)
+    process_level: str = Field(default="PROVINCE", max_length=20)
+    process_status: str = Field(default="บค.สสจ. ตรวจสอบ", max_length=160)
+    process_detail: str | None = Field(default=None, max_length=255)
     retirement_use_approved: bool = False
     retirement_approval_doc_no: str | None = None
     retirement_approval_doc_date: date | None = None
@@ -256,6 +263,9 @@ class VacancyEventCreate(BaseModel):
     event_type: str = Field(min_length=2, max_length=80)
     to_status: VacancyStatus | None = None
     milestone: str | None = Field(default=None, max_length=10)
+    process_level: str | None = Field(default=None, max_length=20)
+    process_status: str | None = Field(default=None, max_length=160)
+    process_detail: str | None = Field(default=None, max_length=255)
     reference_doc_no: str | None = None
     notes: str | None = None
     retirement_use_approved: bool | None = None
@@ -267,6 +277,36 @@ class VacancyEventCreate(BaseModel):
 READ_ALL = {UserRole.MOPH_ADMIN, UserRole.REGION_ADMIN, UserRole.REGION_EXECUTIVE, UserRole.AUDITOR}
 WRITE_ALL = {UserRole.MOPH_ADMIN, UserRole.REGION_ADMIN}
 WRITE = WRITE_ALL | {UserRole.PROVINCE_ADMIN, UserRole.HOSPITAL_HR}
+
+PROCESS_LEVELS = {"PROVINCE", "REGION", "MOPH", "DONE"}
+PROCESS_STATUS_BY_LEVEL = {
+    "PROVINCE": {"บค.สสจ. ตรวจสอบ", "CHRO จังหวัด พิจารณา"},
+    "REGION": {"CHRO เขต พิจารณา"},
+    "MOPH": {
+        "อนุมัติ บรรจุผู้สอบแข่งขัน",
+        "อนุมัติ บรรจุผู้ได้รับคัดเลือก",
+        "อนุมัติ ปรับปรุง",
+        "อนุมัติ ยุบกำหนดตำแหน่งสูงขึ้น",
+        "อนุมัติ รับย้าย (ระบุชื่อ)",
+        "อนุมัติ รับโอน (ระบุชื่อ)",
+        "อนุมัติ รับย้าย/รับโอน",
+        "อนุมัติ เลื่อน",
+        "อนุมัติ เกลี่ย",
+        "อนุมัติ เปลี่ยนตำแหน่ง",
+        "อนุมัติ เปลี่ยนประเภทการจ้าง",
+        "อนุมัติ จ้างทดแทน",
+        "อื่นๆ",
+    },
+    "DONE": {"ดำเนินการเสร็จสิ้น"},
+}
+
+
+def validate_process_state(level: str, status: str) -> None:
+    if level not in PROCESS_LEVELS:
+        raise HTTPException(status_code=422, detail="Invalid process_level.")
+    allowed = PROCESS_STATUS_BY_LEVEL.get(level, set())
+    if status not in allowed:
+        raise HTTPException(status_code=422, detail=f"process_status is not valid for {level}.")
 
 
 def get_db():
@@ -710,10 +750,32 @@ app.add_middleware(
 )
 
 
+def ensure_runtime_schema():
+    """Small forward-compatible migration for existing SQLite/PostgreSQL deployments."""
+    inspector = inspect(engine)
+    if "vacancy_cases" not in inspector.get_table_names():
+        return
+    existing = {col["name"] for col in inspector.get_columns("vacancy_cases")}
+    additions = {
+        "process_level": "VARCHAR(20) DEFAULT 'PROVINCE'",
+        "process_status": "VARCHAR(160) DEFAULT 'บค.สสจ. ตรวจสอบ'",
+        "process_detail": "VARCHAR(255)",
+        "process_updated_at": "TIMESTAMP",
+    }
+    with engine.begin() as conn:
+        for name, ddl in additions.items():
+            if name not in existing:
+                conn.execute(text(f"ALTER TABLE vacancy_cases ADD COLUMN {name} {ddl}"))
+        conn.execute(text("UPDATE vacancy_cases SET process_level='PROVINCE' WHERE process_level IS NULL OR process_level=''"))
+        conn.execute(text("UPDATE vacancy_cases SET process_status='บค.สสจ. ตรวจสอบ' WHERE process_status IS NULL OR process_status=''"))
+        conn.execute(text("UPDATE vacancy_cases SET process_updated_at=CURRENT_TIMESTAMP WHERE process_updated_at IS NULL"))
+
+
 @app.on_event("startup")
 def startup():
     HROPS_STORAGE_DIR.mkdir(parents=True, exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema()
 
 
 @app.get("/healthz")
@@ -831,11 +893,17 @@ def dashboard_summary(user: User = Depends(current_user), db: Session = Depends(
         HropsImportRun.status.in_(["COMPLETED", "COMPLETED_WITH_ERRORS"])
     ).order_by(HropsImportRun.baseline_month.desc(), HropsImportRun.created_at.desc()).first()
 
+    process_counts = {
+        level: vacancy_query.filter(VacancyCase.process_level == level).count()
+        for level in ["PROVINCE", "REGION", "MOPH", "DONE"]
+    }
+
     return {
         "positions_total": positions_total,
         "vacancies_active": vacancies_active,
         "waiting_approval": waiting_approval,
         "recruiting_or_appointing": recruiting_or_appointing,
+        "process_counts": process_counts,
         "latest_import": None if latest is None else {
             "import_id": latest.import_id,
             "baseline_month": latest.baseline_month,
@@ -940,6 +1008,7 @@ def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depend
     assert_unit_scope(db, user, p.unit_id, write=True)
     if db.query(VacancyCase).filter(VacancyCase.case_no == payload.case_no).first():
         raise HTTPException(status_code=409, detail="case_no exists.")
+    validate_process_state(payload.process_level, payload.process_status)
     c = VacancyCase(**payload.model_dump(), created_by_user_id=user.user_id)
     db.add(c); db.flush()
     db.add(VacancyEvent(case_id=c.case_id, event_type="CASE_CREATED", to_status=c.status.value, milestone=c.current_milestone, notes=c.remarks, actor_user_id=user.user_id))
@@ -988,6 +1057,10 @@ def vacancies(
                 "vacant_reason": case.vacant_reason,
                 "status": case.status,
                 "current_milestone": case.current_milestone,
+                "process_level": case.process_level,
+                "process_status": case.process_status,
+                "process_detail": case.process_detail,
+                "process_updated_at": case.process_updated_at,
                 "retirement_use_approved": case.retirement_use_approved,
                 "retirement_approval_doc_no": case.retirement_approval_doc_no,
                 "retirement_approval_doc_date": case.retirement_approval_doc_date,
@@ -1006,7 +1079,14 @@ def vacancy_event(case_id: str, payload: VacancyEventCreate, request: Request, u
     if not c:
         raise HTTPException(status_code=404, detail="Vacancy case not found.")
     assert_unit_scope(db, user, c.responsible_unit_id, write=True)
-    before = {"status": c.status.value, "milestone": c.current_milestone, "retirement_use_approved": c.retirement_use_approved}
+    before = {
+        "status": c.status.value,
+        "milestone": c.current_milestone,
+        "process_level": c.process_level,
+        "process_status": c.process_status,
+        "process_detail": c.process_detail,
+        "retirement_use_approved": c.retirement_use_approved,
+    }
     old_status = c.status.value
     if payload.to_status is not None:
         c.status = payload.to_status
@@ -1014,6 +1094,17 @@ def vacancy_event(case_id: str, payload: VacancyEventCreate, request: Request, u
             c.closed_at = datetime.now(timezone.utc)
     if payload.milestone is not None:
         c.current_milestone = payload.milestone
+    next_process_level = payload.process_level or c.process_level
+    next_process_status = payload.process_status or c.process_status
+    validate_process_state(next_process_level, next_process_status)
+    if payload.process_level is not None:
+        c.process_level = payload.process_level
+    if payload.process_status is not None:
+        c.process_status = payload.process_status
+    if payload.process_detail is not None:
+        c.process_detail = payload.process_detail
+    if payload.process_level is not None or payload.process_status is not None or payload.process_detail is not None:
+        c.process_updated_at = datetime.now(timezone.utc)
     if payload.retirement_use_approved is not None:
         c.retirement_use_approved = payload.retirement_use_approved
     if payload.retirement_approval_doc_no is not None:
@@ -1024,7 +1115,7 @@ def vacancy_event(case_id: str, payload: VacancyEventCreate, request: Request, u
         c.retirement_use_from_date = payload.retirement_use_from_date
     e = VacancyEvent(case_id=c.case_id, event_type=payload.event_type, from_status=old_status, to_status=c.status.value, milestone=c.current_milestone, reference_doc_no=payload.reference_doc_no, notes=payload.notes, actor_user_id=user.user_id)
     db.add(e); db.flush()
-    write_audit(db, user, "VACANCY_EVENT_ADDED", "vacancy_case", c.case_id, request, before=before, after={"event_type": payload.event_type, "status": c.status.value, "milestone": c.current_milestone, "retirement_use_approved": c.retirement_use_approved, "retirement_approval_doc_no": c.retirement_approval_doc_no, "retirement_use_from_date": str(c.retirement_use_from_date) if c.retirement_use_from_date else None})
+    write_audit(db, user, "VACANCY_EVENT_ADDED", "vacancy_case", c.case_id, request, before=before, after={"event_type": payload.event_type, "status": c.status.value, "milestone": c.current_milestone, "process_level": c.process_level, "process_status": c.process_status, "process_detail": c.process_detail, "retirement_use_approved": c.retirement_use_approved, "retirement_approval_doc_no": c.retirement_approval_doc_no, "retirement_use_from_date": str(c.retirement_use_from_date) if c.retirement_use_from_date else None})
     db.commit()
     return {"event_id": e.event_id, "status": c.status, "milestone": c.current_milestone}
 
