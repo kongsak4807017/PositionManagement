@@ -130,7 +130,7 @@
           <div class="table-meta"><span id="vacancyCount">0 รายการ</span><span>กด “อัปเดต” เพื่อบันทึก Event/ขั้นตอน</span></div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Case</th><th>ตำแหน่ง</th><th>หน่วยงาน</th><th>วันที่ว่าง</th><th>สาเหตุ</th><th>Milestone</th><th>Status</th><th></th></tr></thead>
+              <thead><tr><th>Case</th><th>ตำแหน่ง</th><th>หน่วยงาน</th><th>วันที่ว่าง</th><th>สาเหตุ</th><th>ระดับ / สถานะปัจจุบัน</th><th>Milestone</th><th>Status</th><th></th></tr></thead>
               <tbody id="vacancyRows"></tbody>
             </table>
           </div>
@@ -214,6 +214,9 @@
         <label>วันที่ว่าง<input id="vacancyDate" type="date" required></label>
         <label>สาเหตุการว่าง<select id="vacancyReason"><option>เกษียณอายุราชการ</option><option>ลาออก</option><option>ย้าย</option><option>เสียชีวิต</option><option>อื่น ๆ</option></select></label>
         <label>Milestone<select id="vacancyMilestone"><option>M1</option><option>M2</option><option>M3</option><option>M4</option><option>M5</option><option>M6</option></select></label>
+        <label>ระดับดำเนินการ<select id="vacancyProcessLevel"><option value="PROVINCE">ระดับจังหวัด</option><option value="REGION">ระดับเขต</option><option value="MOPH">ระดับ สป.</option><option value="DONE">เสร็จสิ้น</option></select></label>
+        <label>สถานะปัจจุบัน<select id="vacancyProcessStatus"></select></label>
+        <label class="span-2">รายละเอียดสถานะ / ชื่อผู้รับย้าย-รับโอน<input id="vacancyProcessDetail" placeholder="ระบุเมื่อจำเป็น"></label>
         <label class="span-2">หมายเหตุ<textarea id="vacancyRemarks" rows="3"></textarea></label>
       </div>
       <div class="dialog-actions"><button type="button" class="btn btn-ghost" data-close="vacancyDialog">ยกเลิก</button><button class="btn btn-primary" type="submit">สร้าง Case</button></div>
@@ -229,6 +232,9 @@
         <label>Event<select id="eventType"><option value="STATUS_UPDATED">อัปเดตสถานะ</option><option value="DOCUMENT_RECEIVED">รับหนังสือ</option><option value="RETIREMENT_USE_APPROVED">บค.สป. อนุมัติให้ใช้ตำแหน่ง</option><option value="RECRUITMENT_STARTED">เริ่มสรรหา</option><option value="APPOINTMENT_PROGRESS">ดำเนินการบรรจุ/แต่งตั้ง</option><option value="NOTE">บันทึกหมายเหตุ</option></select></label>
         <label>Status<select id="eventStatus"><option value="">คงเดิม</option><option>OPEN</option><option>WAITING_APPROVAL</option><option>READY_TO_RECRUIT</option><option>RECRUITING</option><option>APPOINTING</option><option>FILLED</option><option>CANCELLED</option></select></label>
         <label>Milestone<select id="eventMilestone"><option value="">คงเดิม</option><option>M1</option><option>M2</option><option>M3</option><option>M4</option><option>M5</option><option>M6</option></select></label>
+        <label>ระดับดำเนินการ<select id="eventProcessLevel"><option value="">คงเดิม</option><option value="PROVINCE">ระดับจังหวัด</option><option value="REGION">ระดับเขต</option><option value="MOPH">ระดับ สป.</option><option value="DONE">เสร็จสิ้น</option></select></label>
+        <label>สถานะปัจจุบัน<select id="eventProcessStatus"><option value="">คงเดิม</option></select></label>
+        <label class="span-2">รายละเอียดสถานะ / ชื่อผู้รับย้าย-รับโอน<input id="eventProcessDetail" placeholder="ระบุเมื่อจำเป็น"></label>
         <label>เลขหนังสือ<input id="eventDocNo"></label>
         <label class="span-2 checkbox-line"><input id="eventRetirementApproved" type="checkbox"> บค.สป. อนุมัติให้ใช้ตำแหน่งเกษียณแล้ว</label>
         <label>วันที่หนังสือ<input id="eventDocDate" type="date"></label>
