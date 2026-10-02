@@ -90,6 +90,56 @@
   const todayISO = () => new Date().toISOString().slice(0, 10);
   const nowISO = () => new Date().toISOString();
   const POSITION_LEVELS = ['ปฏิบัติงาน','ชำนาญงาน','อาวุโส','ปฏิบัติการ','ชำนาญการ','ชำนาญการพิเศษ','เชี่ยวชาญ','ทรงคุณวุฒิ'];
+  const PROCESS_LEVELS = [
+    {code:'PROVINCE', label:'ระดับจังหวัด'},
+    {code:'REGION', label:'ระดับเขต'},
+    {code:'MOPH', label:'ระดับ สป.'},
+    {code:'DONE', label:'เสร็จสิ้น'}
+  ];
+  const PROCESS_STATUSES = [
+    {level:'PROVINCE', value:'บค.สสจ. ตรวจสอบ'},
+    {level:'PROVINCE', value:'CHRO จังหวัด พิจารณา'},
+    {level:'REGION', value:'CHRO เขต พิจารณา'},
+    {level:'MOPH', value:'อนุมัติ บรรจุผู้สอบแข่งขัน'},
+    {level:'MOPH', value:'อนุมัติ บรรจุผู้ได้รับคัดเลือก'},
+    {level:'MOPH', value:'อนุมัติ ปรับปรุง'},
+    {level:'MOPH', value:'อนุมัติ ยุบกำหนดตำแหน่งสูงขึ้น'},
+    {level:'MOPH', value:'อนุมัติ รับย้าย (ระบุชื่อ)'},
+    {level:'MOPH', value:'อนุมัติ รับโอน (ระบุชื่อ)'},
+    {level:'MOPH', value:'อนุมัติ รับย้าย/รับโอน'},
+    {level:'MOPH', value:'อนุมัติ เลื่อน'},
+    {level:'MOPH', value:'อนุมัติ เกลี่ย'},
+    {level:'MOPH', value:'อนุมัติ เปลี่ยนตำแหน่ง'},
+    {level:'MOPH', value:'อนุมัติ เปลี่ยนประเภทการจ้าง'},
+    {level:'MOPH', value:'อนุมัติ จ้างทดแทน'},
+    {level:'MOPH', value:'อื่นๆ'},
+    {level:'DONE', value:'ดำเนินการเสร็จสิ้น'}
+  ];
+
+  function inferProcessLevel(p) {
+    if (p.current_milestone === 'M6') return 'DONE';
+    if (p.current_milestone === 'M1') return 'PROVINCE';
+    if (p.current_milestone === 'M2') return 'REGION';
+    return 'MOPH';
+  }
+
+  function inferProcessStatus(p) {
+    const level = inferProcessLevel(p);
+    if (level === 'DONE') return 'ดำเนินการเสร็จสิ้น';
+    if (level === 'PROVINCE') return 'บค.สสจ. ตรวจสอบ';
+    if (level === 'REGION') return 'CHRO เขต พิจารณา';
+    const channel = String(p.management_channel || '');
+    if (channel.includes('รับย้าย')) return 'อนุมัติ รับย้าย (ระบุชื่อ)';
+    if (channel.includes('รับโอน')) return 'อนุมัติ รับโอน (ระบุชื่อ)';
+    if (channel.includes('เลื่อน')) return 'อนุมัติ เลื่อน';
+    if (channel.includes('สอบคัดเลือก')) return 'อนุมัติ บรรจุผู้ได้รับคัดเลือก';
+    if (channel.includes('บัญชี')) return 'อนุมัติ บรรจุผู้สอบแข่งขัน';
+    return 'อื่นๆ';
+  }
+
+  function processLevelLabel(code) {
+    return PROCESS_LEVELS.find(x => x.code === code)?.label || code || '-';
+  }
 
   function isRetirementReason(reason) {
     return reason === 'เกษียณ' || reason === 'เกษียณอายุราชการ';
@@ -136,7 +186,11 @@
           cadre_group:base?.position_type || p.cadre_group || 'ไม่ระบุ',
           retirement_use_approved:Boolean(p.retirement_use_approved),
           retirement_approval_doc_no:p.retirement_approval_doc_no || '',
-          retirement_use_from_date:p.retirement_use_from_date || ''
+          retirement_use_from_date:p.retirement_use_from_date || '',
+          process_level:p.process_level || inferProcessLevel(p),
+          process_status:p.process_status || inferProcessStatus(p),
+          process_detail:p.process_detail || '',
+          process_updated_at:p.process_updated_at || p.updated_at || nowISO()
         };
       });
     return next;
@@ -159,13 +213,13 @@
       tab: 'baseline',
       role: 'hosp_operator',
       scope: 'U5701',
-      filters: {province:'', employment:'', workflow:'', milestone:'', sla:'', q:''}
+      filters: {province:'', employment:'', workflow:'', milestone:'', sla:'', process_level:'', process_status:'', q:''}
     };
   }
 
   let state = loadState();
   let ui = loadUI();
-  ui.filters = {province:'',employment:'',workflow:'',milestone:'',sla:'',q:'',...(ui.filters||{})};
+  ui.filters = {province:'',employment:'',workflow:'',milestone:'',sla:'',process_level:'',process_status:'',q:'',...(ui.filters||{})};
   let modalMode = null;
   let selectedPositionId = null;
 
@@ -556,11 +610,13 @@
     if (f.workflow === 'NOT_STARTED') rows = rows.filter(p => !p.workflow_started);
     if (f.milestone) rows = rows.filter(p => p.workflow?.current_milestone === f.milestone);
     if (f.sla) rows = rows.filter(p => p.workflow?.sla_status === f.sla);
+    if (f.process_level) rows = rows.filter(p => p.workflow?.process_level === f.process_level);
+    if (f.process_status) rows = rows.filter(p => p.workflow?.process_status === f.process_status);
     if (f.q) {
       const q = f.q.toLowerCase();
       rows = rows.filter(p => [
         p.hrops_position_no,p.position_name,p.position_level,p.specialist_name,
-        p.unit_name,p.unit_prefix,p.province_name,p.vacancy_reason,p.employment_type
+        p.unit_name,p.unit_prefix,p.province_name,p.vacancy_reason,p.employment_type,p.workflow?.process_status,p.workflow?.process_detail
       ].join(' ').toLowerCase().includes(q));
     }
     return rows.sort((a,b) => String(a.hrops_position_no).localeCompare(String(b.hrops_position_no),'th'));
@@ -576,11 +632,13 @@
 
     byId('view-positions').innerHTML = [
       '<div class="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h1 class="text-xl font-black">ตำแหน่งว่าง</h1><p class="text-sm text-slate-500">Position Master จาก จ.18 + สถานะ Workflow ของตำแหน่งเดียวกัน</p></div><button id="exportCsvBtn" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold">⬇ CSV</button></div>',
-      '<div class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="grid gap-2 md:grid-cols-6">',
+      '<div class="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="grid gap-2 md:grid-cols-4 xl:grid-cols-8">',
       selectField('filterProvince','จังหวัด','<option value="">ทั้งหมด</option>'+state.provinces.map(p=>'<option value="'+esc(p.province_code)+'">'+esc(p.province_name_th)+'</option>').join(''),ui.filters.province),
       selectField('filterEmployment','ประเภทบุคลากร','<option value="">ทั้งหมด</option>'+empTypes.map(x=>'<option>'+esc(x)+'</option>').join(''),ui.filters.employment),
       selectField('filterWorkflow','Workflow','<option value="">ทั้งหมด</option><option value="STARTED">เริ่มติดตามแล้ว</option><option value="NOT_STARTED">ยังไม่เริ่มติดตาม</option>',ui.filters.workflow),
       selectField('filterMilestone','Milestone','<option value="">ทั้งหมด</option>'+state.milestones.map(m=>'<option>'+esc(m.milestone_code)+'</option>').join(''),ui.filters.milestone),
+      selectField('filterProcessLevel','ระดับดำเนินการ','<option value="">ทั้งหมด</option>'+PROCESS_LEVELS.map(x=>'<option value="'+x.code+'">'+esc(x.label)+'</option>').join(''),ui.filters.process_level),
+      selectField('filterProcessStatus','สถานะปัจจุบัน','<option value="">ทั้งหมด</option>'+PROCESS_STATUSES.map(x=>'<option value="'+esc(x.value)+'">'+esc(x.value)+'</option>').join(''),ui.filters.process_status),
       selectField('filterSla','SLA','<option value="">ทั้งหมด</option><option value="NORMAL">ปกติ</option><option value="WARNING">ใกล้ครบ</option><option value="BREACHED">เกิน SLA</option>',ui.filters.sla),
       '<label class="text-xs text-slate-500">ค้นหา<input id="filterQ" value="'+esc(ui.filters.q||'')+'" placeholder="เลขตำแหน่ง / หน่วยงาน / ชื่อตำแหน่ง" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"></label>',
       '</div></div>',
@@ -616,7 +674,7 @@
   function positionTable(rows) {
     if (!rows.length) return '<div class="p-8 text-center text-sm text-slate-400">ไม่พบข้อมูลตามเงื่อนไข</div>';
     return '<div class="w-full overflow-x-auto"><table class="w-full min-w-[1320px] table-fixed text-left text-[11px] xl:text-xs leading-5"><thead class="bg-slate-50 text-slate-500"><tr>'
-      +'<th class="w-[85px] p-2.5">เลขตำแหน่ง</th><th class="w-[190px] p-2.5">จังหวัด / หน่วยงาน</th><th class="w-[170px] p-2.5">ชื่อตำแหน่ง</th><th class="w-[115px] p-2.5">ระดับ</th><th class="w-[130px] p-2.5">ประเภทบุคลากร</th><th class="w-[180px] p-2.5">เหตุว่าง / สิทธิ์ใช้</th><th class="w-[115px] p-2.5">Workflow</th><th class="w-[90px] p-2.5">SLA</th><th class="w-[170px] p-2.5">Bottleneck</th><th class="w-[100px] p-2.5 text-right">Action</th></tr></thead><tbody>'
+      +'<th class="w-[85px] p-2.5">เลขตำแหน่ง</th><th class="w-[190px] p-2.5">จังหวัด / หน่วยงาน</th><th class="w-[170px] p-2.5">ชื่อตำแหน่ง</th><th class="w-[115px] p-2.5">ระดับ</th><th class="w-[130px] p-2.5">ประเภทบุคลากร</th><th class="w-[180px] p-2.5">เหตุว่าง / สิทธิ์ใช้</th><th class="w-[210px] p-2.5">ระดับ / สถานะปัจจุบัน</th><th class="w-[105px] p-2.5">Workflow</th><th class="w-[90px] p-2.5">SLA</th><th class="w-[150px] p-2.5">Bottleneck</th><th class="w-[100px] p-2.5 text-right">Action</th></tr></thead><tbody>'
       +rows.map(p => {
         const op = p.workflow;
         const editable = !op || canEdit(op);
@@ -627,6 +685,7 @@
           +'<td class="p-2.5 align-top font-semibold">'+esc(p.position_level||'-')+'</td>'
           +'<td class="p-2.5 align-top">'+esc(p.employment_type||'-')+'</td>'
           +'<td class="p-2.5 align-top">'+retirementStatus(p)+'</td>'
+          +'<td class="p-2.5 align-top">'+(op?'<span class="rounded-full bg-cyan-100 px-2 py-1 font-bold text-cyan-800">'+esc(processLevelLabel(op.process_level))+'</span><span class="mt-1 block font-semibold text-slate-700">'+esc(op.process_status||'-')+'</span>'+(op.process_detail?'<span class="block text-[10px] text-slate-500">'+esc(op.process_detail)+'</span>':''):'<span class="text-slate-400">–</span>')+'</td>'
           +'<td class="p-2.5 align-top">'+(op?'<span class="rounded-full bg-indigo-100 px-2 py-1 font-bold text-indigo-700">'+esc(op.current_milestone)+'</span><span class="mt-1 block text-[10px] text-slate-500">ติดตามแล้ว</span>':'<span class="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-500">ยังไม่เริ่ม</span>')+'</td>'
           +'<td class="p-2.5 align-top">'+(op?badge(op.sla_status):'<span class="text-slate-400">–</span>')+'</td>'
           +'<td class="p-2.5 align-top">'+(op?esc(op.bottleneck_name):'<span class="text-slate-400">–</span>')+'</td>'
@@ -638,7 +697,7 @@
   function bindFilters() {
     const map = [
       ['filterProvince','province'],['filterEmployment','employment'],['filterWorkflow','workflow'],
-      ['filterMilestone','milestone'],['filterSla','sla']
+      ['filterMilestone','milestone'],['filterProcessLevel','process_level'],['filterProcessStatus','process_status'],['filterSla','sla']
     ];
     map.forEach(([id,key]) => {
       const el = byId(id); if (!el) return; el.value = ui.filters[key] || '';
@@ -677,6 +736,11 @@
     byId('view-analytics').innerHTML = [
       '<div class="mb-5"><h1 class="text-xl font-black">Analytics</h1><p class="text-sm text-slate-500">วิเคราะห์จาก จ.18 Position Master และ Workflow ที่ผูกกับตำแหน่งเดียวกัน</p></div>',
       '<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">'+metricCard('ตำแหน่งว่าง',base.length.toLocaleString('th-TH'),'จ.18','text-rose-600')+metricCard('เข้าสู่ Workflow',rows.length.toLocaleString('th-TH'),'เริ่มติดตามแล้ว','text-indigo-600')+metricCard('ยังไม่เริ่มติดตาม',untracked.toLocaleString('th-TH'),'ต้องกำหนดผู้รับผิดชอบ','text-amber-600')+metricCard('เกิน SLA',active.filter(p=>p.sla_status==='BREACHED').length.toLocaleString('th-TH'),'Workflow ที่ต้องเร่งรัด','text-rose-600')+'</div>',
+      '<div class="mt-5 rounded-2xl border border-cyan-200 bg-white p-5 shadow-sm"><div class="mb-4"><h2 class="font-bold">สถานะเลขตำแหน่ง: จังหวัด → เขต → สป.</h2><p class="text-xs text-slate-500">Feedback สสจ.: แสดงว่าแต่ละเลขตำแหน่งอยู่ที่ระดับใด และกำลังดำเนินการเรื่องอะไร</p></div><div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">'
+        +PROCESS_LEVELS.map(l=>{const n=rows.filter(p=>p.process_level===l.code).length;return '<button class="process-level-jump rounded-xl border border-slate-200 bg-slate-50 p-4 text-left hover:border-cyan-400" data-level="'+l.code+'"><div class="text-xs text-slate-500">'+esc(l.label)+'</div><div class="mt-1 text-2xl font-black text-cyan-800">'+n.toLocaleString('th-TH')+'</div><div class="text-[11px] text-slate-400">ตำแหน่ง</div></button>';}).join('')
+        +'</div><div class="mt-4 overflow-x-auto"><table class="min-w-full text-xs"><thead class="bg-slate-50"><tr><th class="p-3 text-left">ระดับ</th><th class="p-3 text-left">สถานะ</th><th class="p-3 text-center">จำนวน</th><th class="p-3 text-right">ดูเลขตำแหน่ง</th></tr></thead><tbody>'
+        +PROCESS_STATUSES.map(s=>{const n=rows.filter(p=>p.process_level===s.level&&p.process_status===s.value).length;if(!n)return '';return '<tr class="border-t border-slate-100"><td class="p-3 font-semibold">'+esc(processLevelLabel(s.level))+'</td><td class="p-3">'+esc(s.value)+'</td><td class="p-3 text-center font-bold">'+n.toLocaleString('th-TH')+'</td><td class="p-3 text-right"><button class="process-status-jump rounded-lg border border-cyan-200 px-2 py-1 font-semibold text-cyan-800" data-level="'+s.level+'" data-status="'+esc(s.value)+'">ดูรายการ</button></td></tr>';}).join('')
+        +'</tbody></table></div></div>',
       '<div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">'+emp.map(x=>metricCard(x.label,x.count.toLocaleString('th-TH'),'ตำแหน่งว่าง','text-slate-900')).join('')+'</div>',
       '<div class="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 class="mb-4 font-bold">จังหวัด: Baseline → Workflow → Governance</h2><div class="overflow-x-auto"><table class="min-w-full text-xs"><thead class="bg-slate-50"><tr><th class="p-3 text-left">จังหวัด</th><th class="p-3">ว่าง</th><th class="p-3">เข้า Workflow</th><th class="p-3">ยังไม่ติดตาม</th><th class="p-3">เกิน SLA</th></tr></thead><tbody>'
         +provinces.map(p=>'<tr class="border-t border-slate-100"><td class="p-3 font-bold">'+esc(p.name)+'</td><td class="p-3 text-center">'+p.vacant.toLocaleString('th-TH')+'</td><td class="p-3 text-center text-indigo-600">'+p.workflow.toLocaleString('th-TH')+'</td><td class="p-3 text-center text-amber-600">'+p.untracked.toLocaleString('th-TH')+'</td><td class="p-3 text-center text-rose-600">'+p.breached.toLocaleString('th-TH')+'</td></tr>').join('')
@@ -687,6 +751,8 @@
         +state.milestones.map(m=>{const r=rows.filter(p=>p.current_milestone===m.milestone_code);return '<tr class="border-t border-slate-100"><td class="p-3"><b>'+esc(m.milestone_code)+'</b> '+esc(m.milestone_name_th)+'</td><td class="p-3 text-center">'+r.length+'</td><td class="p-3 text-center text-emerald-600">'+r.filter(p=>p.sla_status==='NORMAL').length+'</td><td class="p-3 text-center text-amber-600">'+r.filter(p=>p.sla_status==='WARNING').length+'</td><td class="p-3 text-center text-rose-600">'+r.filter(p=>p.sla_status==='BREACHED').length+'</td></tr>'}).join('')
         +'</tbody></table></div></div>'
     ].join('');
+    document.querySelectorAll('.process-level-jump').forEach(btn=>btn.onclick=()=>{ui.filters.process_level=btn.dataset.level;ui.filters.process_status='';positionPage=1;setTab('positions');});
+    document.querySelectorAll('.process-status-jump').forEach(btn=>btn.onclick=()=>{ui.filters.process_level=btn.dataset.level;ui.filters.process_status=btn.dataset.status;positionPage=1;setTab('positions');});
   }
 
   function escalationLevel(p) {
@@ -798,7 +864,11 @@
       remarks:'',
       retirement_use_approved:false,
       retirement_approval_doc_no:'',
-      retirement_use_from_date:''
+      retirement_use_from_date:'',
+      process_level:'PROVINCE',
+      process_status:'บค.สสจ. ตรวจสอบ',
+      process_detail:'',
+      process_updated_at:nowISO()
     };
 
     byId('modalRoot').innerHTML = modalShell(
@@ -812,6 +882,9 @@
       +'<form id="positionForm" class="grid gap-3 md:grid-cols-2">'
       +selectHtml('fChannel','ช่องทางการบริหาร',['รับย้าย','เลื่อนระดับ','เรียกบัญชี สป.','สอบคัดเลือก','รับโอน','จ้าง/สรรหา'].map(x=>'<option>'+x+'</option>').join(''),p.management_channel)
       +selectHtml('fMilestone','Milestone',state.milestones.map(m=>'<option value="'+esc(m.milestone_code)+'">'+esc(m.milestone_code)+' • '+esc(m.milestone_name_th)+'</option>').join(''),p.current_milestone)
+      +selectHtml('fProcessLevel','ระดับที่กำลังดำเนินการ',PROCESS_LEVELS.map(x=>'<option value="'+x.code+'">'+esc(x.label)+'</option>').join(''),p.process_level||inferProcessLevel(p))
+      +selectHtml('fProcessStatus','สถานะปัจจุบัน',PROCESS_STATUSES.map(x=>'<option data-level="'+x.level+'" value="'+esc(x.value)+'">'+esc(x.value)+'</option>').join(''),p.process_status||inferProcessStatus(p))
+      +inputText('fProcessDetail','รายละเอียดสถานะ / ชื่อผู้รับย้าย-รับโอน',p.process_detail||'','placeholder="ระบุเมื่อจำเป็น เช่น ชื่อผู้รับย้าย/รับโอน"')
       +inputText('fStageDate','วันที่เข้าสู่ milestone',p.milestone_entry_date,'type="date"')
       +selectHtml('fBottleneck','Bottleneck',state.bottlenecks.map(b=>'<option value="'+b.tag_id+'">'+esc(b.tag_name)+'</option>').join(''),String(p.bottleneck_tag_id||8))
       +(isRetirementReason(base.vacancy_reason)?'<div id="retirementApprovalBlock" class="rounded-xl border border-amber-200 bg-amber-50 p-3 md:col-span-2"><label class="flex items-center gap-2 text-sm font-semibold text-amber-900"><input id="fRetirementApproved" type="checkbox" class="h-4 w-4" '+(p.retirement_use_approved?'checked':'')+'> บค.สป. อนุมัติให้ใช้ตำแหน่งเกษียณอายุราชการแล้ว</label><div id="retirementApprovalDetails" class="mt-3 grid gap-3 md:grid-cols-2">'+inputText('fRetirementDoc','เลขหนังสืออนุมัติ บค.สป.',p.retirement_approval_doc_no||'','')+inputText('fRetirementUseFrom','ใช้ตำแหน่งได้ตั้งแต่วันที่',p.retirement_use_from_date||'','type="date"')+'</div></div>':'')
@@ -823,7 +896,11 @@
     );
     setValue('fChannel',p.management_channel);
     setValue('fMilestone',p.current_milestone);
+    setValue('fProcessLevel',p.process_level||inferProcessLevel(p));
+    setValue('fProcessStatus',p.process_status||inferProcessStatus(p));
     setValue('fBottleneck',String(p.bottleneck_tag_id||8));
+    if (byId('fProcessLevel')) byId('fProcessLevel').onchange = syncProcessStatusOptions;
+    syncProcessStatusOptions();
     if (byId('fRetirementApproved')) {
       syncRetirementFields();
       byId('fRetirementApproved').onchange = syncRetirementFields;
@@ -832,6 +909,19 @@
     if (byId('savePositionBtn')) byId('savePositionBtn').onclick = savePosition;
     if (byId('timelineModalBtn')) byId('timelineModalBtn').onclick = () => openTimeline(id);
     if (byId('deletePositionBtn')) byId('deletePositionBtn').onclick = () => deletePosition(id);
+  }
+
+  function syncProcessStatusOptions() {
+    const level = byId('fProcessLevel')?.value;
+    const select = byId('fProcessStatus');
+    if (!select) return;
+    const previous = select.value;
+    [...select.options].forEach(opt => { opt.hidden = Boolean(opt.dataset.level) && opt.dataset.level !== level; });
+    const valid = [...select.options].find(opt => !opt.hidden && opt.value === previous);
+    if (!valid) {
+      const first = [...select.options].find(opt => !opt.hidden);
+      if (first) select.value = first.value;
+    }
   }
 
   function syncRetirementFields() {
@@ -888,6 +978,10 @@
       retirement_use_from_date:retirementApproved ? retirementUseFrom : '',
       management_channel:byId('fChannel').value,
       current_milestone:msCode,
+      process_level:byId('fProcessLevel').value,
+      process_status:byId('fProcessStatus').value,
+      process_detail:byId('fProcessDetail').value.trim(),
+      process_updated_at:nowISO(),
       milestone_entry_date:byId('fStageDate').value,
       sla_days:Number(ms?.default_sla_days||30),
       bottleneck_tag_id:Number(byId('fBottleneck').value),
