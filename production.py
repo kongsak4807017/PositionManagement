@@ -309,6 +309,21 @@ def validate_process_state(level: str, status: str) -> None:
         raise HTTPException(status_code=422, detail=f"process_status is not valid for {level}.")
 
 
+def validate_process_permission(user: User, level: str) -> None:
+    allowed_by_role = {
+        UserRole.HOSPITAL_HR: {"PROVINCE"},
+        UserRole.PROVINCE_ADMIN: {"PROVINCE", "REGION"},
+        UserRole.REGION_ADMIN: PROCESS_LEVELS,
+        UserRole.MOPH_ADMIN: PROCESS_LEVELS,
+    }
+    allowed = allowed_by_role.get(user.role, set())
+    if level not in allowed:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{user.role.value} cannot set process level {level}.",
+        )
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -1009,6 +1024,7 @@ def create_vacancy(payload: VacancyCreate, request: Request, user: User = Depend
     if db.query(VacancyCase).filter(VacancyCase.case_no == payload.case_no).first():
         raise HTTPException(status_code=409, detail="case_no exists.")
     validate_process_state(payload.process_level, payload.process_status)
+    validate_process_permission(user, payload.process_level)
     c = VacancyCase(**payload.model_dump(), created_by_user_id=user.user_id)
     db.add(c); db.flush()
     db.add(VacancyEvent(case_id=c.case_id, event_type="CASE_CREATED", to_status=c.status.value, milestone=c.current_milestone, notes=c.remarks, actor_user_id=user.user_id))
@@ -1097,6 +1113,7 @@ def vacancy_event(case_id: str, payload: VacancyEventCreate, request: Request, u
     next_process_level = payload.process_level or c.process_level
     next_process_status = payload.process_status or c.process_status
     validate_process_state(next_process_level, next_process_status)
+    validate_process_permission(user, next_process_level)
     if payload.process_level is not None:
         c.process_level = payload.process_level
     if payload.process_status is not None:
