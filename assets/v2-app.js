@@ -794,6 +794,13 @@
     const localBytes = new Blob([JSON.stringify(state)]).size;
     byId('view-admin').innerHTML = [
       '<div class="mb-5"><h1 class="text-xl font-black">Admin, Role Simulation & Data Status</h1><p class="text-sm text-slate-500">ตรวจสอบ source, permission และ lifecycle ของ preview dataset</p></div>',
+      '<div class="mb-5 rounded-2xl border border-cyan-200 bg-white p-5 shadow-sm"><div class="flex flex-wrap items-start justify-between gap-3"><div><div class="text-xs font-bold uppercase tracking-wider text-cyan-700">Monthly J.18 Import</div><h2 class="mt-1 text-lg font-black">นำเข้า จ.18 รายเดือน → Update Database</h2><p class="mt-1 text-xs text-slate-500">สำหรับ <b>REGION_ADMIN / บค.เขต</b> ใช้ช่วงต้นเดือนเมื่อได้รับไฟล์ จ.18 ใหม่</p></div><span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">Static Preview</span></div>'
+        +'<div class="mt-4 grid gap-3 md:grid-cols-3"><label class="text-xs font-semibold text-slate-600">1. เดือน Baseline<input id="previewHropsMonth" type="month" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"></label><label class="text-xs font-semibold text-slate-600 md:col-span-2">2. เลือกไฟล์ จ.18 (.xlsx)<input id="previewHropsFile" type="file" accept=".xlsx" class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2"></label></div>'
+        +'<div id="previewHropsFileInfo" class="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-500">ยังไม่ได้เลือกไฟล์ • Production รองรับไฟล์ประมาณ 36–50 MB</div>'
+        +'<div class="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100"><div id="previewHropsBar" class="h-full w-0 rounded-full bg-cyan-600 transition-all"></div></div>'
+        +'<div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs"><span id="previewHropsStatus" class="text-slate-500">ขั้นตอนจริง: Upload → ตรวจ Sheet 2 → UPSERT DB → Import History</span><span id="previewHropsPercent" class="font-bold text-cyan-800">0%</span></div>'
+        +'<div class="mt-4 flex flex-wrap gap-2"><button id="previewHropsUpload" class="rounded-lg bg-cyan-700 px-4 py-2 text-xs font-bold text-white">จำลอง Upload & Update DB</button><span class="self-center text-[11px] text-slate-500">GitHub Pages จะไม่เขียน DB จริง • เมื่อ Deploy Server ปุ่มนี้จะเรียก <code>/api/hrops/imports</code></span></div>'
+        +'<div class="mt-4 grid gap-2 text-xs md:grid-cols-5"><div class="rounded-xl border border-slate-100 p-3"><b>1</b><span class="block text-slate-500">เลือกเดือน</span></div><div class="rounded-xl border border-slate-100 p-3"><b>2</b><span class="block text-slate-500">เลือก .xlsx</span></div><div class="rounded-xl border border-slate-100 p-3"><b>3</b><span class="block text-slate-500">Upload พร้อม %</span></div><div class="rounded-xl border border-slate-100 p-3"><b>4</b><span class="block text-slate-500">Server Update DB</span></div><div class="rounded-xl border border-slate-100 p-3"><b>5</b><span class="block text-slate-500">ดูสรุป / History</span></div></div></div>',
       '<div class="grid gap-5 xl:grid-cols-3">',
       '<div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><h2 class="font-bold">Data status</h2><div class="mt-4 space-y-3 text-sm">'
         +statusLine('Preview version',state.meta.version||'2.0.0','ok')
@@ -823,6 +830,42 @@
     if (byId('adminImportJson')) byId('adminImportJson').onclick = () => byId('importJsonInput').click();
     byId('adminExportCsv').onclick = () => exportCsv(filteredPositions());
     if (byId('adminReset')) byId('adminReset').onclick = resetData;
+
+    const previewMonth = byId('previewHropsMonth');
+    if (previewMonth && !previewMonth.value) {
+      const d = new Date();
+      previewMonth.value = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    }
+    const previewFile = byId('previewHropsFile');
+    if (previewFile) previewFile.onchange = () => {
+      const file = previewFile.files?.[0];
+      if (!file) return;
+      const mb = file.size / (1024*1024);
+      const ok = file.name.toLowerCase().endsWith('.xlsx') && mb <= 95;
+      byId('previewHropsFileInfo').innerHTML = '<b>'+esc(file.name)+'</b> • '+mb.toFixed(1)+' MB • '+(ok?'<span class="text-emerald-700">ผ่านการตรวจเบื้องต้น</span>':'<span class="text-rose-700">ไฟล์ไม่ผ่านเงื่อนไข</span>');
+      byId('previewHropsStatus').textContent = ok ? 'พร้อมจำลอง Upload — Production จะอ่าน Sheet 2 “เขต 1”' : 'รองรับเฉพาะ .xlsx และขนาดไม่เกิน 95 MB ที่ browser';
+    };
+    const previewUpload = byId('previewHropsUpload');
+    if (previewUpload) previewUpload.onclick = () => {
+      const file = previewFile?.files?.[0];
+      if (!file) { alert('กรุณาเลือกไฟล์ จ.18 .xlsx ก่อน'); return; }
+      if (!file.name.toLowerCase().endsWith('.xlsx')) { alert('รองรับเฉพาะไฟล์ .xlsx'); return; }
+      const mb = file.size/(1024*1024);
+      if (mb > 95) { alert('ไฟล์ใหญ่เกิน 95 MB'); return; }
+      let p = 0;
+      byId('previewHropsStatus').textContent = 'กำลังจำลอง Upload...';
+      previewUpload.disabled = true;
+      const timer = setInterval(()=>{
+        p += 10;
+        byId('previewHropsBar').style.width = p+'%';
+        byId('previewHropsPercent').textContent = p+'%';
+        if (p >= 100) {
+          clearInterval(timer);
+          byId('previewHropsStatus').textContent = 'Static Preview: Upload ครบแล้ว • Production Server จะตรวจ Sheet 2 และ Update Database ต่อ';
+          previewUpload.disabled = false;
+        }
+      },90);
+    };
   }
 
   function statusLine(label,value,tone) {
