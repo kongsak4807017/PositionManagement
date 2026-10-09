@@ -88,13 +88,40 @@ No production password, database password or JWT secret is stored in the reposit
 
 ## HROPS monthly upload
 
-`POST /api/hrops/imports`
+Monthly update is designed for **`REGION_ADMIN` (บค.สำนักงานเขตสุขภาพ)** and `MOPH_ADMIN`.
 
-Required role: `MOPH_ADMIN` or `REGION_ADMIN`.
+Production UI flow:
 
-The service accepts `.xlsx`, enforces an upload size limit, computes SHA-256, stores the original file in an immutable monthly directory and registers an import run.
+```text
+Login as REGION_ADMIN
+  -> choose baseline month
+  -> select J.18 .xlsx
+  -> JavaScript validates extension/size and shows upload progress
+  -> POST /api/hrops/imports
+  -> server stores original file + SHA-256
+  -> openpyxl read_only reads Sheet 2 "เขต 1"
+  -> validate technical header row 6
+  -> UPSERT Position Master inside database transaction
+  -> write monthly HROPS Position Snapshot + Audit Log
+  -> COMMIT on success / ROLLBACK database changes on processing failure
+  -> show Insert / Update / Unchanged / Vacant / Skipped + Import History
+```
 
-The next implementation layer is the approved HROPS **field mapper + reconciliation processor**. It must be configured against the actual HROPS column dictionary before automatic baseline publication; the repository intentionally does not guess production column names.
+### Large file support
+
+The expected monthly J.18 file is approximately **36–50 MB**. The implementation does **not** parse this workbook in the browser. JavaScript only handles selection, role check, upload progress, timeout and result display; workbook processing happens on the server.
+
+- browser pre-check: up to 95 MB
+- application default `MAX_HROPS_UPLOAD_MB`: 100 MB
+- Nginx `client_max_body_size`: 120 MB
+- upload / processing timeout: 15 minutes
+- server upload copy: 1 MB chunks
+- Excel reader: `openpyxl(load_workbook(..., read_only=True, data_only=True))`
+- duplicate same-month/same-SHA upload: rejected
+- HROPS updates Position Master; it does not overwrite Vacancy Workflow/Event data entered byพื้นที่
+
+This design is suitable for the current 36–50 MB file range. Actual Ministry server sizing should still be load-tested with the real monthly workbook before production cutover.
+
 
 ## Production database model
 
