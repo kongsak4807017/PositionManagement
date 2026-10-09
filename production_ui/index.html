@@ -142,16 +142,21 @@
           <article class="panel">
             <div class="panel-head"><div><span class="eyebrow">MONTHLY IMPORT</span><h3>Upload จ.18 / HROPS → Database</h3></div></div>
             <div class="notice info">
-              <strong>รูปแบบที่รองรับ</strong>
-              <span>อ่าน Sheet 2 “เขต 1”, technical header แถว 6 และข้อมูลเริ่มแถว 7 ตามไฟล์ จ18 1 กย 69</span>
+              <strong>Monthly Baseline Update — สำหรับ REGION_ADMIN / บค.เขต</strong>
+              <span>รองรับไฟล์ จ.18 .xlsx ขนาดประมาณ 36–50 MB โดย Server จะอ่าน Sheet 2 “เขต 1”, technical header แถว 6 และข้อมูลเริ่มแถว 7 แล้ว UPSERT ลงฐานข้อมูลแบบ transaction</span>
             </div>
             <form id="hropsForm" class="form-grid">
               <label>เดือน Baseline<input id="hropsMonth" type="month" required></label>
-              <label class="span-2">ไฟล์ .xlsx<input id="hropsFile" type="file" accept=".xlsx" required></label>
-              <label class="span-2">หมายเหตุ<input id="hropsNotes" placeholder="เช่น ข้อมูล จ.18 ณ 1 ต.ค. 2569"></label>
+              <label class="span-2">ไฟล์ จ.18 (.xlsx)<input id="hropsFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label>
+              <div id="hropsFileInfo" class="span-2 selected-record">ยังไม่ได้เลือกไฟล์</div>
+              <label class="span-2">หมายเหตุ<input id="hropsNotes" placeholder="เช่น ข้อมูล จ.18 ณ 1 พ.ย. 2569"></label>
+              <div class="span-2">
+                <div class="upload-progress-track" aria-hidden="true"><div id="hropsProgressBar" class="upload-progress-bar"></div></div>
+                <div class="upload-progress-meta"><span id="hropsProgress" class="muted">พร้อมนำเข้า</span><span id="hropsProgressPercent">0%</span></div>
+              </div>
               <div class="span-2 form-actions">
-                <button class="btn btn-primary" type="submit">Upload และ Update Database</button>
-                <span id="hropsProgress" class="muted"></span>
+                <button id="hropsUploadButton" class="btn btn-primary" type="submit">Upload และ Update Database</button>
+                <button id="hropsCancelButton" class="btn btn-ghost hidden" type="button">ยกเลิก Upload</button>
               </div>
             </form>
             <div id="hropsResult" class="import-result hidden"></div>
