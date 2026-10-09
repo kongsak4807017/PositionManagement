@@ -2,7 +2,10 @@
   "use strict";
 
   const TOKEN_KEY = "chro_hr1_token";
+  const HROPS_CLIENT_MAX_MB = 95;
+  const HROPS_UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
   const state = { token: sessionStorage.getItem(TOKEN_KEY), me: null, provinces: [], units: [], page: "dashboard" };
+  let activeHropsXhr = null;
 
   const ROLE_RULES = {
     MOPH_ADMIN: { hrops:true, users:true, audit:true, write:true, scope:"ทั้งเขตสุขภาพที่ 1", permission:"บริหารระบบทั้งหมด, Upload HROPS, จัดการผู้ใช้, แก้ไข workflow และตรวจ Audit" },
@@ -54,6 +57,97 @@
     return new Intl.DateTimeFormat("th-TH",{year:"2-digit",month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(d);
   };
   const roleRules = () => ROLE_RULES[state.me?.role] || {hrops:false,users:false,audit:false,write:false,scope:"-",permission:"-"};
+
+  function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return "-";
+    const units = ["B","KB","MB","GB"];
+    let value = bytes, unit = 0;
+    while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+    return (unit === 0 ? Math.round(value) : value.toFixed(1)) + " " + units[unit];
+  }
+
+  function localMonthValue() {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2,"0");
+  }
+
+  function setHropsUploadState({percent=0, message="พร้อมนำเข้า", busy=false}={}) {
+    const p = Math.max(0, Math.min(100, Number(percent) || 0));
+    if ($("hropsProgressBar")) $("hropsProgressBar").style.width = p + "%";
+    if ($("hropsProgressPercent")) $("hropsProgressPercent").textContent = Math.round(p) + "%";
+    if ($("hropsProgress")) $("hropsProgress").textContent = message;
+    if ($("hropsUploadButton")) $("hropsUploadButton").disabled = busy;
+    if ($("hropsFile")) $("hropsFile").disabled = busy;
+    if ($("hropsMonth")) $("hropsMonth").disabled = busy;
+    if ($("hropsNotes")) $("hropsNotes").disabled = busy;
+    if ($("hropsCancelButton")) $("hropsCancelButton").classList.toggle("hidden", !busy);
+  }
+
+  function validateHropsFile(file) {
+    if (!file) throw new Error("กรุณาเลือกไฟล์ จ.18 .xlsx");
+    if (!file.name.toLowerCase().endsWith(".xlsx")) throw new Error("รองรับเฉพาะไฟล์ .xlsx");
+    const maxBytes = HROPS_CLIENT_MAX_MB * 1024 * 1024;
+    if (file.size > maxBytes) throw new Error("ไฟล์ใหญ่เกิน " + HROPS_CLIENT_MAX_MB + " MB");
+    if (file.size === 0) throw new Error("ไฟล์ว่าง ไม่สามารถนำเข้าได้");
+    return true;
+  }
+
+  function uploadHropsWithProgress(body) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      activeHropsXhr = xhr;
+      xhr.open("POST", "/api/hrops/imports", true);
+      xhr.timeout = HROPS_UPLOAD_TIMEOUT_MS;
+      if (state.token) xhr.setRequestHeader("Authorization", "Bearer " + state.token);
+
+      xhr.upload.onprogress = event => {
+        if (!event.lengthComputable) return;
+        const percent = Math.min(99, (event.loaded / event.total) * 100);
+        setHropsUploadState({
+          percent,
+          busy:true,
+          message:"กำลัง Upload " + formatBytes(event.loaded) + " / " + formatBytes(event.total)
+        });
+      };
+
+      xhr.upload.onload = () => {
+        setHropsUploadState({
+          percent:100,
+          busy:true,
+          message:"Upload ครบแล้ว • Server กำลังอ่าน Sheet 2 และ Update Database..."
+        });
+      };
+
+      xhr.onload = () => {
+        activeHropsXhr = null;
+        let data = {};
+        try { data = JSON.parse(xhr.responseText || "{}"); } catch (_) {}
+        if (xhr.status === 401) {
+          logout(false);
+          return reject(new Error("Session หมดอายุ กรุณาเข้าสู่ระบบอีกครั้ง"));
+        }
+        if (xhr.status < 200 || xhr.status >= 300) {
+          const detail = data.detail;
+          return reject(new Error(typeof detail === "string" ? detail : JSON.stringify(detail || data || {status:xhr.status})));
+        }
+        resolve(data);
+      };
+
+      xhr.onerror = () => {
+        activeHropsXhr = null;
+        reject(new Error("การเชื่อมต่อขัดข้องระหว่าง Upload กรุณาตรวจสอบเครือข่ายแล้วลองใหม่"));
+      };
+      xhr.ontimeout = () => {
+        activeHropsXhr = null;
+        reject(new Error("Server ใช้เวลาประมวลผลเกิน 15 นาที กรุณาตรวจสอบ Import History ก่อน Upload ซ้ำ"));
+      };
+      xhr.onabort = () => {
+        activeHropsXhr = null;
+        reject(new Error("ยกเลิกการ Upload แล้ว"));
+      };
+      xhr.send(body);
+    });
+  }
 
   function toast(message) {
     const el = $("toast");
@@ -145,7 +239,10 @@
     if (page === "dashboard") loadDashboard();
     if (page === "positions") loadPositions();
     if (page === "vacancies") loadVacancies();
-    if (page === "hrops") loadHropsHistory();
+    if (page === "hrops") {
+      if (!$("hropsMonth").value) $("hropsMonth").value = localMonthValue();
+      loadHropsHistory();
+    }
     if (page === "users") { configureNewUserForm(); loadUsers(); }
     if (page === "audit") loadAudit();
   }
@@ -350,28 +447,76 @@
     } catch(e2) { toast(e2.message); }
   });
 
+  $("hropsFile").addEventListener("change", () => {
+    const file = $("hropsFile").files[0];
+    if (!file) {
+      $("hropsFileInfo").textContent = "ยังไม่ได้เลือกไฟล์";
+      setHropsUploadState({percent:0,message:"พร้อมนำเข้า",busy:false});
+      return;
+    }
+    try {
+      validateHropsFile(file);
+      $("hropsFileInfo").innerHTML = "<strong>"+esc(file.name)+"</strong><br><span class=\"muted\">ขนาด "+esc(formatBytes(file.size))+" • พร้อม Upload เข้า Server</span>";
+      setHropsUploadState({percent:0,message:"ตรวจไฟล์เบื้องต้นผ่าน",busy:false});
+    } catch (err) {
+      $("hropsFileInfo").innerHTML = "<strong>ไฟล์ไม่ผ่านการตรวจ</strong><br><span class=\"muted\">"+esc(err.message)+"</span>";
+      setHropsUploadState({percent:0,message:"กรุณาเลือกไฟล์ใหม่",busy:false});
+    }
+  });
+
+  $("hropsCancelButton").addEventListener("click", () => {
+    if (activeHropsXhr) activeHropsXhr.abort();
+  });
+
   $("hropsForm").addEventListener("submit", async e => {
     e.preventDefault();
-    const file = $("hropsFile").files[0], month = $("hropsMonth").value;
-    if (!file || !month) return;
+
+    if (!["REGION_ADMIN","MOPH_ADMIN"].includes(state.me?.role)) {
+      toast("เฉพาะ Admin เขต / Admin ส่วนกลางเท่านั้นที่ Upload จ.18 ได้");
+      return;
+    }
+
+    const file = $("hropsFile").files[0];
+    const month = $("hropsMonth").value;
+    try {
+      validateHropsFile(file);
+      if (!month) throw new Error("กรุณาเลือกเดือน Baseline");
+    } catch (err) {
+      toast(err.message);
+      return;
+    }
+
     const body = new FormData();
     body.append("baseline_month", month + "-01");
     body.append("notes", $("hropsNotes").value.trim());
     body.append("file", file);
-    $("hropsProgress").textContent = "กำลังอ่าน Sheet 2 และ Update DB...";
+
     $("hropsResult").classList.add("hidden");
+    setHropsUploadState({percent:0,message:"กำลังเตรียม Upload...",busy:true});
+
     try {
-      const r = await api("/api/hrops/imports",{method:"POST",body});
+      const r = await uploadHropsWithProgress(body);
       const s = r.summary || {};
-      $("hropsResult").innerHTML = '<strong>นำเข้าข้อมูลสำเร็จ</strong><div class="result-grid"><div><span>Rows</span><strong>'+Number(s.rows_seen||0).toLocaleString("th-TH")+'</strong></div><div><span>Insert</span><strong>'+Number(s.inserted||0).toLocaleString("th-TH")+'</strong></div><div><span>Update</span><strong>'+Number(s.updated||0).toLocaleString("th-TH")+'</strong></div><div><span>Unchanged</span><strong>'+Number(s.unchanged||0).toLocaleString("th-TH")+'</strong></div><div><span>Vacant</span><strong>'+Number(s.vacant||0).toLocaleString("th-TH")+'</strong></div><div><span>Skipped</span><strong>'+Number(s.skipped||0).toLocaleString("th-TH")+'</strong></div></div>';
+      $("hropsResult").innerHTML =
+        '<strong>นำเข้าข้อมูลรายเดือนสำเร็จ</strong>'+
+        '<div class="cell-sub">ไฟล์ '+esc(file.name)+' • '+esc(formatBytes(file.size))+' • Baseline '+esc(month)+'</div>'+
+        '<div class="result-grid">'+
+          '<div><span>Rows</span><strong>'+Number(s.rows_seen||0).toLocaleString("th-TH")+'</strong></div>'+
+          '<div><span>Insert</span><strong>'+Number(s.inserted||0).toLocaleString("th-TH")+'</strong></div>'+
+          '<div><span>Update</span><strong>'+Number(s.updated||0).toLocaleString("th-TH")+'</strong></div>'+
+          '<div><span>Unchanged</span><strong>'+Number(s.unchanged||0).toLocaleString("th-TH")+'</strong></div>'+
+          '<div><span>Vacant</span><strong>'+Number(s.vacant||0).toLocaleString("th-TH")+'</strong></div>'+
+          '<div><span>Skipped</span><strong>'+Number(s.skipped||0).toLocaleString("th-TH")+'</strong></div>'+
+        '</div>';
       $("hropsResult").classList.remove("hidden");
-      $("hropsProgress").textContent = "Database updated";
+      setHropsUploadState({percent:100,message:"Database updated และ Commit สำเร็จ",busy:false});
       toast("จ.18 / HROPS อัปเดตฐานข้อมูลแล้ว");
-      await loadHropsHistory(); loadDashboard();
-    } catch(e2) {
-      $("hropsProgress").textContent = "ไม่สำเร็จ";
-      $("hropsResult").innerHTML = '<strong>Import ไม่สำเร็จ</strong><div class="cell-sub">'+esc(e2.message)+'</div>';
+      await loadHropsHistory();
+      loadDashboard();
+    } catch (err) {
+      $("hropsResult").innerHTML = '<strong>Import ไม่สำเร็จ</strong><div class="cell-sub">'+esc(err.message)+'</div>';
       $("hropsResult").classList.remove("hidden");
+      setHropsUploadState({percent:0,message:"ไม่สำเร็จ • ฐานข้อมูลจะไม่ Commit หาก Server Import ล้มเหลว",busy:false});
     }
   });
 
